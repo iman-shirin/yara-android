@@ -51,7 +51,7 @@ class YaraProvider(private val prefs: YaraPreferences) {
             .header("Content-Type", "application/json")
             .header("x-goog-api-client", "yara-android/0.2.0")
             .post(body).build()
-        client.newCall(request).execute().use { response ->
+        return client.newCall(request).execute().use { response ->
             val responseText = response.body?.string().orEmpty()
             if (!response.isSuccessful) error("HTTP ${response.code}: ${responseText.take(400)}")
             JSONObject(responseText).getJSONArray("choices").getJSONObject(0)
