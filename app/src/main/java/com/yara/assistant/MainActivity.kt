@@ -12,6 +12,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -257,21 +259,52 @@ private fun YaraAvatar(isSpeaking: Boolean, hasConversation: Boolean, modifier: 
 
 @Composable
 private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
-    var base by remember { mutableStateOf(prefs.baseUrl) }
-    var model by remember { mutableStateOf(prefs.model) }
-    var key by remember { mutableStateOf(prefs.apiKey) }
+    val initialGroq = prefs.groq
+    val initialGemini = prefs.gemini
+    var groqBase by remember { mutableStateOf(initialGroq.baseUrl) }
+    var groqModel by remember { mutableStateOf(initialGroq.model) }
+    var groqKey by remember { mutableStateOf(initialGroq.apiKey) }
+    var geminiBase by remember { mutableStateOf(initialGemini.baseUrl) }
+    var geminiModel by remember { mutableStateOf(initialGemini.model) }
+    var geminiKey by remember { mutableStateOf(initialGemini.apiKey) }
+    var fallback by remember { mutableStateOf(prefs.fallbackEnabled) }
+    var error by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = close,
-        title = { Text("اتصال مدل هوش مصنوعی") },
+        title = { Text("اتصال سرویس‌های هوش مصنوعی") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(base, { base = it }, label = { Text("نشانی پایه API") }, singleLine = true)
-                OutlinedTextField(model, { model = it }, label = { Text("نام مدل") }, singleLine = true)
-                OutlinedTextField(key, { key = it }, label = { Text("کلید API") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                Text("کلید API فعلاً در حافظه محلی برنامه ذخیره می‌شود؛ پیش از انتشار عمومی باید ذخیره‌سازی رمزنگاری شود.", style = MaterialTheme.typography.bodySmall)
+            Column(
+                Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("سرویس اصلی: Groq", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                OutlinedTextField(groqBase, { groqBase = it }, label = { Text("نشانی پایه Groq") }, singleLine = true)
+                OutlinedTextField(groqModel, { groqModel = it }, label = { Text("مدل Groq") }, singleLine = true)
+                OutlinedTextField(groqKey, { groqKey = it }, label = { Text("کلید API Groq") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+
+                Divider()
+                Text("سرویس جایگزین: Google Gemini", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                OutlinedTextField(geminiBase, { geminiBase = it }, label = { Text("نشانی پایه Gemini") }, singleLine = true)
+                OutlinedTextField(geminiModel, { geminiModel = it }, label = { Text("مدل Gemini") }, singleLine = true)
+                OutlinedTextField(geminiKey, { geminiKey = it }, label = { Text("کلید API Gemini") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = fallback, onCheckedChange = { fallback = it })
+                    Text("استفاده خودکار از Gemini هنگام اختلال Groq")
+                }
+                Text("کلیدها به‌صورت رمزنگاری‌شده در Android Keystore نگهداری می‌شوند. کلیدها را در چت یا مخزن کد منتشر نکن.", style = MaterialTheme.typography.bodySmall)
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { TextButton(onClick = { prefs.save(base.trim(), model.trim(), key.trim()); close() }) { Text("ذخیره") } },
+        confirmButton = {
+            TextButton(onClick = {
+                runCatching {
+                    prefs.saveProviders(groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey, fallback)
+                }.onSuccess { close() }
+                    .onFailure { error = it.message ?: "ذخیره تنظیمات ناموفق بود." }
+            }) { Text("ذخیره") }
+        },
         dismissButton = { TextButton(onClick = close) { Text("انصراف") } }
     )
 }
