@@ -20,13 +20,13 @@ class YaraProvider(private val prefs: YaraPreferences) {
         val primary = prefs.groq
         require(primary.apiKey.isNotBlank()) { "ابتدا کلید API سرویس Groq را در تنظیمات وارد کن." }
         try {
-            request(primary, history, message)
+            return@withContext request(primary, history, message)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             val secondary = prefs.gemini
             if (!prefs.fallbackEnabled || secondary.apiKey.isBlank() || !isRetryable(error)) throw error
             try {
-                request(secondary, history, message)
+                return@withContext request(secondary, history, message)
             } catch (fallbackError: Exception) {
                 if (fallbackError is CancellationException) throw fallbackError
                 throw IOException("اتصال Groq و Gemini ناموفق بود. Groq: ${error.message}; Gemini: ${fallbackError.message}", fallbackError)
