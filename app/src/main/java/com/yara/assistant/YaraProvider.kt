@@ -1,5 +1,6 @@
 package com.yara.assistant
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -8,6 +9,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class YaraProvider(private val prefs: YaraPreferences) {
@@ -15,21 +17,45 @@ class YaraProvider(private val prefs: YaraPreferences) {
         .callTimeout(90, TimeUnit.SECONDS).connectTimeout(20, TimeUnit.SECONDS).build()
 
     suspend fun reply(history: List<ChatLine>, message: String): String = withContext(Dispatchers.IO) {
-        require(prefs.apiKey.isNotBlank()) { "ابتدا کلید API را در تنظیمات وارد کن." }
-        require(prefs.model.isNotBlank()) { "نام مدل خالی است." }
-        val messages = JSONArray().put(JSONObject().put("role", "system").put("content", "تو یارا هستی؛ دستیار فارسی‌زبان، دقیق، امن و کاربردی."))
+        val primary = prefs.groq
+        require(primary.apiKey.isNotBlank()) { "ابتدا کلید API سرویس Groq را در تنظیمات وارد کن." }
+        try {
+            request(primary, history, message)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            val secondary = prefs.gemini
+            if (!prefs.fallbackEnabled || secondary.apiKey.isBlank() || !isRetryable(error)) throw error
+            try {
+                request(secondary, history, message)
+            } catch (fallbackError: Exception) {
+                if (fallbackError is CancellationException) throw fallbackError
+                throw IOException("اتصال Groq و Gemini ناموفق بود. Groq: ${error.message}; Gemini: ${fallbackError.message}", fallbackError)
+            }
+        }
+    }
+
+    private fun isRetryable(error: Exception): Boolean =
+        error is IOException || error.message?.contains("HTTP 408") == true ||
+            error.message?.contains("HTTP 429") == true || error.message?.contains("HTTP 5") == true
+
+    private fun request(provider: ProviderConfig, history: List<ChatLine>, message: String): String {
+        require(provider.apiKey.isNotBlank()) { "کلید API سرویس ${provider.name} وارد نشده است." }
+        val messages = JSONArray().put(JSONObject().put("role", "system")
+            .put("content", "تو یارا هستی؛ دستیار فارسی‌زبان، دقیق، امن و کاربردی."))
         history.takeLast(30).forEach { messages.put(JSONObject().put("role", it.role).put("content", it.content)) }
         messages.put(JSONObject().put("role", "user").put("content", message))
-        val body = JSONObject().put("model", prefs.model).put("messages", messages).toString()
+        val body = JSONObject().put("model", provider.model).put("messages", messages).toString()
             .toRequestBody("application/json; charset=utf-8".toMediaType())
-        val url = prefs.baseUrl.trimEnd('/') + "/chat/completions"
-        val request = Request.Builder().url(url).header("Authorization", "Bearer ${prefs.apiKey}")
+        val request = Request.Builder().url(provider.baseUrl.trimEnd('/') + "/chat/completions")
+            .header("Authorization", "Bearer ${provider.apiKey}")
+            .header("Content-Type", "application/json")
+            .header("x-goog-api-client", "yara-android/0.2.0")
             .post(body).build()
         client.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("HTTP ${response.code}: ${text.take(500)}")
-            val json = JSONObject(text)
-            json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+            val responseText = response.body?.string().orEmpty()
+            if (!response.isSuccessful) error("HTTP ${response.code}: ${responseText.take(400)}")
+            JSONObject(responseText).getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").getString("content")
         }
     }
 }
