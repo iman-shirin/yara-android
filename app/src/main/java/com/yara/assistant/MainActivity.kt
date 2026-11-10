@@ -11,7 +11,10 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -69,16 +72,36 @@ class MainActivity : ComponentActivity() {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Text("یارا", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("دستیار هوشمند شخصی", style = MaterialTheme.typography.labelMedium, color = Color(0xFF9BA8C7))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        modifier = Modifier.size(42.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = Color(0xFF282448),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB7A0FF).copy(alpha = 0.35f))
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("Y", color = Color(0xFFB7A0FF), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                                        }
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text("یارا", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("دستیار هوش مصنوعی", style = MaterialTheme.typography.labelSmall, color = Color(0xFF9BA8C7))
+                                    }
                                 }
-                                TextButton(onClick = { showSettings = true }) { Text("تنظیمات") }
+                                Surface(
+                                    onClick = { showSettings = true },
+                                    shape = RoundedCornerShape(13.dp),
+                                    color = Color(0xFF1A2440),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
+                                ) {
+                                    Text("⚙  تنظیمات", Modifier.padding(horizontal = 13.dp, vertical = 10.dp), color = Color(0xFFDAE2F5), style = MaterialTheme.typography.labelLarge)
+                                }
                             }
                         }
                     ) { pad ->
                         Column(
-                            Modifier.fillMaxSize().padding(pad).padding(horizontal = 18.dp),
+                            Modifier.fillMaxSize().padding(pad).background(Brush.verticalGradient(listOf(Color(0xFF111A31), Color(0xFF080D1B), Color(0xFF090E1C)))).padding(horizontal = 18.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Spacer(Modifier.height(8.dp))
@@ -87,7 +110,7 @@ class MainActivity : ComponentActivity() {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    YaraAvatar(isSpeaking = busy, hasConversation = showConversation, modifier = Modifier.size(250.dp))
+                                    YaraAvatar(isSpeaking = busy, hasConversation = showConversation, modifier = Modifier.size(238.dp))
                                     Spacer(Modifier.height(12.dp))
                                     Text(
                                         when { busy -> "در حال فکر کردن…" ; showConversation -> "من اینجا هستم" ; else -> "سلام، من یارا هستم" },
@@ -96,13 +119,15 @@ class MainActivity : ComponentActivity() {
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
-                                        "همراه هوشمند تو",
+                                        "دستیار هوشمند شخصی",
                                         color = Color(0xFF9BA8C7),
                                         style = MaterialTheme.typography.bodyMedium
                                     )
+                                    Spacer(Modifier.height(11.dp))
+                                    StatusPill(active = !busy, label = if (busy) "در حال پردازش" else "آماده گفتگو")
                                     if (!showConversation) {
-                                        Spacer(Modifier.height(8.dp))
-                                        Text("برای شروع، پیام بده", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.bodySmall)
+                                        Spacer(Modifier.height(22.dp))
+                                        QuickPrompts(onSelect = { input = it }, modifier = Modifier.fillMaxWidth())
                                     }
                                 }
                             }
@@ -173,6 +198,39 @@ class MainActivity : ComponentActivity() {
                     }
                     if (showSettings) SettingsDialog(prefs) { showSettings = false }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(active: Boolean, label: String) {
+    Surface(
+        color = Color(0xFF17263A),
+        shape = CircleShape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF70D9D0).copy(alpha = 0.18f))
+    ) {
+        Row(Modifier.padding(horizontal = 13.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).background(if (active) Color(0xFF70D9D0) else Color(0xFFB7A0FF), CircleShape))
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = Color(0xFFD4E5E8), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun QuickPrompts(onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text("از کجا شروع کنیم؟", color = Color(0xFFDDE3F4), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("امروز چه کارهایی دارم؟", "یک موضوع را بررسی کن", "برایم برنامه‌ریزی کن").forEach { prompt ->
+                AssistChip(
+                    onClick = { onSelect(prompt) },
+                    label = { Text(prompt, maxLines = 1) },
+                    colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFF17223A), labelColor = Color(0xFFD9DDF0)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+                )
             }
         }
     }
@@ -257,21 +315,52 @@ private fun YaraAvatar(isSpeaking: Boolean, hasConversation: Boolean, modifier: 
 
 @Composable
 private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
-    var base by remember { mutableStateOf(prefs.baseUrl) }
-    var model by remember { mutableStateOf(prefs.model) }
-    var key by remember { mutableStateOf(prefs.apiKey) }
+    val initialGroq = prefs.groq
+    val initialGemini = prefs.gemini
+    var groqBase by remember { mutableStateOf(initialGroq.baseUrl) }
+    var groqModel by remember { mutableStateOf(initialGroq.model) }
+    var groqKey by remember { mutableStateOf(initialGroq.apiKey) }
+    var geminiBase by remember { mutableStateOf(initialGemini.baseUrl) }
+    var geminiModel by remember { mutableStateOf(initialGemini.model) }
+    var geminiKey by remember { mutableStateOf(initialGemini.apiKey) }
+    var fallback by remember { mutableStateOf(prefs.fallbackEnabled) }
+    var error by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = close,
-        title = { Text("اتصال مدل هوش مصنوعی") },
+        title = { Text("اتصال سرویس‌های هوش مصنوعی") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(base, { base = it }, label = { Text("نشانی پایه API") }, singleLine = true)
-                OutlinedTextField(model, { model = it }, label = { Text("نام مدل") }, singleLine = true)
-                OutlinedTextField(key, { key = it }, label = { Text("کلید API") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                Text("کلید API فعلاً در حافظه محلی برنامه ذخیره می‌شود؛ پیش از انتشار عمومی باید ذخیره‌سازی رمزنگاری شود.", style = MaterialTheme.typography.bodySmall)
+            Column(
+                Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("سرویس اصلی: Groq", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                OutlinedTextField(groqBase, { groqBase = it }, label = { Text("نشانی پایه Groq") }, singleLine = true)
+                OutlinedTextField(groqModel, { groqModel = it }, label = { Text("مدل Groq") }, singleLine = true)
+                OutlinedTextField(groqKey, { groqKey = it }, label = { Text("کلید API Groq") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+
+                Divider()
+                Text("سرویس جایگزین: Google Gemini", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                OutlinedTextField(geminiBase, { geminiBase = it }, label = { Text("نشانی پایه Gemini") }, singleLine = true)
+                OutlinedTextField(geminiModel, { geminiModel = it }, label = { Text("مدل Gemini") }, singleLine = true)
+                OutlinedTextField(geminiKey, { geminiKey = it }, label = { Text("کلید API Gemini") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = fallback, onCheckedChange = { fallback = it })
+                    Text("استفاده خودکار از Gemini هنگام اختلال Groq")
+                }
+                Text("کلیدها به‌صورت رمزنگاری‌شده در Android Keystore نگهداری می‌شوند. کلیدها را در چت یا مخزن کد منتشر نکن.", style = MaterialTheme.typography.bodySmall)
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { TextButton(onClick = { prefs.save(base.trim(), model.trim(), key.trim()); close() }) { Text("ذخیره") } },
+        confirmButton = {
+            TextButton(onClick = {
+                runCatching {
+                    prefs.saveProviders(groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey, fallback)
+                }.onSuccess { close() }
+                    .onFailure { error = it.message ?: "ذخیره تنظیمات ناموفق بود." }
+            }) { Text("ذخیره") }
+        },
         dismissButton = { TextButton(onClick = close) { Text("انصراف") } }
     )
 }
