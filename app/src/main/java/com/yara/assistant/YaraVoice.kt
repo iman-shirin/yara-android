@@ -57,14 +57,14 @@ class YaraVoice(context: Context) : TextToSpeech.OnInitListener {
                 override fun onEndOfSpeech() { onListeningChanged?.invoke(false) }
                 override fun onError(error: Int) {
                     onListeningChanged?.invoke(false)
-                    onError?.invoke("تشخیص گفتار انجام نشد (کد $error). دوباره تلاش کن.")
+                    this@YaraVoice.onError?.invoke("تشخیص گفتار انجام نشد (کد $error). دوباره تلاش کن.")
                 }
                 override fun onResults(results: Bundle?) {
                     onListeningChanged?.invoke(false)
                     val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull().orEmpty()
                     if (text.isNotBlank()) onResult?.invoke(text)
-                    else onError?.invoke("گفتاری تشخیص داده نشد.")
+                    else this@YaraVoice.onError?.invoke("گفتاری تشخیص داده نشد.")
                 }
                 override fun onPartialResults(partialResults: Bundle?) = Unit
                 override fun onEvent(eventType: Int, params: Bundle?) = Unit
@@ -96,7 +96,7 @@ class YaraVoice(context: Context) : TextToSpeech.OnInitListener {
     }
 
     private fun stopListening() {
-        recognizer?.runCatching { cancel(); destroy() }
+        recognizer?.let { speech -> runCatching { speech.cancel(); speech.destroy() } }
         recognizer = null
         onListeningChanged?.invoke(false)
     }
