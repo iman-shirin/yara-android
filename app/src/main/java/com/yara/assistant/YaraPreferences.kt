@@ -3,11 +3,24 @@ package com.yara.assistant
 import android.content.Context
 
 class YaraPreferences(context: Context) {
-    private val p = context.getSharedPreferences("yara_settings", Context.MODE_PRIVATE)
-    var baseUrl: String get() = p.getString("base", "https://api.openai.com/v1") ?: "" ; private set
-    var model: String get() = p.getString("model", "gpt-4o-mini") ?: "" ; private set
-    var apiKey: String get() = p.getString("key", "") ?: "" ; private set
+    private val preferences = context.getSharedPreferences("yara_settings", Context.MODE_PRIVATE)
+
+    val baseUrl: String
+        get() = preferences.getString("base", "https://api.openai.com/v1")
+            ?: "https://api.openai.com/v1"
+
+    val model: String
+        get() = preferences.getString("model", "gpt-4o-mini")
+            ?: "gpt-4o-mini"
+
+    val apiKey: String
+        get() = preferences.getString("key", "").orEmpty()
+
     fun save(base: String, model: String, key: String) {
-        p.edit().putString("base", base).putString("model", model).putString("key", key).apply()
+        preferences.edit()
+            .putString("base", base)
+            .putString("model", model)
+            .putString("key", key)
+            .apply()
     }
 }
