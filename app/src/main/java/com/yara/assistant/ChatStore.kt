@@ -5,15 +5,47 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class ChatStore(context: Context) {
-    private val p = context.getSharedPreferences("yara_chat", Context.MODE_PRIVATE)
+    private val preferences = context.applicationContext
+        .getSharedPreferences("yara_chat", Context.MODE_PRIVATE)
+
     fun load(): List<ChatLine> {
-        val raw = p.getString("lines", "[]") ?: "[]"
-        val a = JSONArray(raw)
-        return (0 until a.length()).map { i -> a.getJSONObject(i).let { ChatLine(it.getString("role"), it.getString("content")) } }
+        val raw = preferences.getString("lines", "[]") ?: "[]"
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val role = item.optString("role")
+                    val content = item.optString("content")
+                    if (role in ALLOWED_ROLES && content.isNotBlank()) {
+                        add(ChatLine(role, content))
+                    }
+                }
+            }.takeLast(MAX_MESSAGES)
+        }.getOrElse {
+            // Preserve app usability if a previous app version left malformed JSON.
+            emptyList()
+        }
     }
+
     fun save(lines: List<ChatLine>) {
-        val a = JSONArray()
-        lines.takeLast(200).forEach { a.put(JSONObject().put("role", it.role).put("content", it.content)) }
-        p.edit().putString("lines", a.toString()).apply()
+        val array = JSONArray()
+        lines.takeLast(MAX_MESSAGES)
+            .filter { it.role in ALLOWED_ROLES && it.content.isNotBlank() }
+            .forEach { line ->
+                array.put(
+                    JSONObject()
+                        .put("role", line.role)
+                        .put("content", line.content)
+                )
+            }
+        check(preferences.edit().putString("lines", array.toString()).commit()) {
+            "ذخیره تاریخچه گفتگو انجام نشد."
+        }
+    }
+
+    private companion object {
+        const val MAX_MESSAGES = 200
+        val ALLOWED_ROLES = setOf("user", "assistant")
     }
 }
