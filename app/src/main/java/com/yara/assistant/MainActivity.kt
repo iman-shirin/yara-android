@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
                     var listening by remember { mutableStateOf(false) }
                     var speaking by remember { mutableStateOf(false) }
                     var voiceError by remember { mutableStateOf<String?>(null) }
+                    var voiceStatus by remember { mutableStateOf("") }
                     var voiceOutput by remember { mutableStateOf(true) }
                     val microphonePermission = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission()
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity() {
                     DisposableEffect(voice) {
                         voice.onResult = { recognized -> input = recognized; voiceError = null }
                         voice.onError = { message -> voiceError = message }
+                        voice.onStatus = { message -> voiceStatus = message }
                         voice.onListeningChanged = { listening = it }
                         voice.onSpeakingChanged = { speaking = it }
                         onDispose { voice.release() }
@@ -240,6 +242,9 @@ class MainActivity : ComponentActivity() {
                                     shape = CircleShape,
                                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp)
                                 ) { Text(if (busy) "…" else "ارسال") }
+                            }
+                            if (voiceStatus.isNotBlank()) {
+                                Text(voiceStatus, color = Color(0xFF70D9D0), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 6.dp))
                             }
                             if (voiceError != null) {
                                 Text(voiceError!!, color = Color(0xFFFF9C9C), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
