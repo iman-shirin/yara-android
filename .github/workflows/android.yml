@@ -26,6 +26,18 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Fetch licensed CC0 anime VRM avatar
+        run: |
+          mkdir -p app/src/main/assets
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/GY19A/jev-stage/14168affb0c187441c0fe5fe3e67fbaaa4b6d2cb/static/vrm/anime_girl.vrm \
+            --output app/src/main/assets/yara_anime_girl.vrm
+          test "$(stat -c%s app/src/main/assets/yara_anime_girl.vrm)" -gt 1000000
+          mkdir -p app/libs
+          curl --fail --location --retry 3 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar \
+            --output app/libs/sherpa-onnx-2.0.1.aar
+          test "$(stat -c%s app/libs/sherpa-onnx-2.0.1.aar)" -gt 10000000
       - name: Verify Gradle configuration
         run: gradle --no-daemon tasks --all
       - name: Run unit tests
