@@ -1,6 +1,9 @@
 package com.yara.assistant
 
 import android.os.Bundle
+import android.webkit.WebView
+import android.webkit.WebResourceRequest
+import android.webkit.WebViewClient
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
@@ -39,6 +42,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebViewAssetLoader
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -287,79 +292,43 @@ private fun QuickPrompts(onSelect: (String) -> Unit, modifier: Modifier = Modifi
 
 @Composable
 private fun YaraAvatar(isSpeaking: Boolean, hasConversation: Boolean, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "yara-face")
-    val blink by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.08f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 3600
-                1f at 0
-                1f at 3000
-                0.08f at 3070 with FastOutSlowInEasing
-                1f at 3150
-                1f at 3600
-            },
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "blink"
-    )
-    val mouthMotion by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes { durationMillis = 520; 0f at 0; 1f at 260; 0f at 520 },
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "mouth"
-    )
-    val mouthOpen = if (isSpeaking) mouthMotion else 0.12f
-
-    Canvas(modifier = modifier) {
-        val c = center
-        val unit = size.minDimension
-        val faceSize = unit * 0.72f
-        val faceTop = c.y - faceSize * 0.48f
-        val faceLeft = c.x - faceSize / 2f
-        drawCircle(
-            brush = Brush.radialGradient(listOf(Color(0xFF354C78), Color(0xFF161D35), Color(0x00101528)), center = c, radius = unit * 0.49f),
-            radius = unit * 0.49f,
-            center = c
-        )
-        drawCircle(Color(0xFF8F7BFF).copy(alpha = 0.12f), radius = faceSize * 0.56f, center = c, style = Stroke(width = unit * 0.012f))
-        drawOval(
-            brush = Brush.linearGradient(listOf(Color(0xFFDBE9FF), Color(0xFF91A9D8), Color(0xFF52658F))),
-            topLeft = Offset(faceLeft, faceTop),
-            size = Size(faceSize, faceSize * 1.04f)
-        )
-        drawOval(
-            color = Color(0xFF263858),
-            topLeft = Offset(faceLeft + faceSize * 0.07f, faceTop + faceSize * 0.08f),
-            size = Size(faceSize * 0.86f, faceSize * 0.84f),
-            style = Stroke(width = unit * 0.012f)
-        )
-        val eyeY = faceTop + faceSize * 0.43f
-        val eyeW = faceSize * 0.20f
-        val eyeH = faceSize * 0.12f * blink.coerceAtLeast(0.06f)
-        val leftEye = Offset(c.x - faceSize * 0.23f, eyeY)
-        val rightEye = Offset(c.x + faceSize * 0.23f, eyeY)
-        listOf(leftEye, rightEye).forEach { eye ->
-            drawOval(Color(0xFF17233F), Offset(eye.x - eyeW / 2f, eye.y - eyeH / 2f), Size(eyeW, eyeH))
-            if (blink > 0.25f) {
-                drawCircle(Color(0xFF73E6E0), radius = faceSize * 0.043f, center = Offset(eye.x, eye.y))
-                drawCircle(Color(0xFF10182B), radius = faceSize * 0.021f, center = Offset(eye.x, eye.y))
-                drawCircle(Color.White.copy(alpha = 0.85f), radius = faceSize * 0.012f, center = Offset(eye.x - faceSize * 0.015f, eye.y - faceSize * 0.018f))
-            }
+    val context = LocalContext.current
+    val webViewRef = remember { mutableStateOf<WebView?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewRef.value?.stopLoading()
+            webViewRef.value?.destroy()
+            webViewRef.value = null
         }
-        val mouthWidth = faceSize * 0.22f
-        val mouthHeight = faceSize * (0.018f + mouthOpen * 0.075f)
-        drawOval(
-            color = Color(0xFF243653),
-            topLeft = Offset(c.x - mouthWidth / 2f, faceTop + faceSize * 0.70f - mouthHeight / 2f),
-            size = Size(mouthWidth, mouthHeight)
-        )
-        drawCircle(Color(0xFF9EEBE5).copy(alpha = 0.6f), radius = unit * 0.018f, center = Offset(c.x, faceTop + faceSize * 0.57f))
     }
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            val assetLoader = WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
+                .build()
+            WebView(ctx).apply {
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) =
+                        assetLoader.shouldInterceptRequest(request.url)
+                }
+                webViewRef.value = this
+                loadUrl("https://appassets.androidplatform.net/assets/yara_avatar.html")
+            }
+        },
+        update = { view ->
+            view.evaluateJavascript(
+                "window.yaraSetState && window.yaraSetState($isSpeaking, $hasConversation)",
+                null
+            )
+        }
+    )
 }
 
 @Composable
