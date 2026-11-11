@@ -10,7 +10,7 @@ Yara Android 0.3.0 — Third-party asset and model notices
 - Model license: https://creativecommons.org/publicdomain/zero/1.0/
 
 2) Persian speech synthesis
-- Runtime: sherpa-onnx, Apache License 2.0
+- Runtime: sherpa-onnx v2.0.1 Android AAR, Apache License 2.0
 - Voice: vits-piper-fa_IR-amir-medium, converted Piper model
 - Model archive: https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2
 - Model card and samples: https://k2-fsa.github.io/sherpa/onnx/tts/all/Persian/vits-piper-fa_IR-amir-medium.html
