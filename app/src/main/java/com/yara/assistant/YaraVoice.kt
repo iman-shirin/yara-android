@@ -1,42 +1,51 @@
 package com.yara.assistant
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
-import java.util.Locale
+import com.k2fsa.sherpa.onnx.OfflineTts
+import com.k2fsa.sherpa.onnx.OfflineTtsConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import java.io.BufferedInputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
-/** Persian Android speech recognition and text-to-speech adapter. */
-class YaraVoice(context: Context) : TextToSpeech.OnInitListener {
+/**
+ * Persian ASR plus a dedicated offline Piper/Sherpa Persian voice.
+ * Android's default TTS is deliberately not used: it can silently fall back
+ * to an unrelated system language when Persian voice data is absent.
+ */
+class YaraVoice(context: Context) {
     private val appContext = context.applicationContext
-    private var tts: TextToSpeech? = TextToSpeech(appContext, this)
+    private val worker = Executors.newSingleThreadExecutor()
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.MINUTES)
+        .build()
     private var recognizer: SpeechRecognizer? = null
-    private var ttsReady = false
+    @Volatile private var tts: OfflineTts? = null
+    @Volatile private var activeTrack: AudioTrack? = null
+    @Volatile private var released = false
 
     var onResult: ((String) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
+    var onStatus: ((String) -> Unit)? = null
     var onListeningChanged: ((Boolean) -> Unit)? = null
     var onSpeakingChanged: ((Boolean) -> Unit)? = null
-
-    override fun onInit(status: Int) {
-        ttsReady = status == TextToSpeech.SUCCESS
-        if (ttsReady) {
-            val result = tts?.setLanguage(Locale.forLanguageTag("fa-IR"))
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                onError?.invoke("صدای فارسی در موتور گفتار این دستگاه نصب یا پشتیبانی نمی‌شود.")
-            }
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) { onSpeakingChanged?.invoke(true) }
-                override fun onDone(utteranceId: String?) { onSpeakingChanged?.invoke(false) }
-                @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) { onSpeakingChanged?.invoke(false) }
-            })
-        }
-    }
 
     fun startListening() {
         if (!SpeechRecognizer.isRecognitionAvailable(appContext)) {
@@ -77,17 +86,151 @@ class YaraVoice(context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun speak(text: String) {
-        if (!ttsReady || text.isBlank()) {
-            onError?.invoke("موتور تبدیل متن به گفتار هنوز آماده نیست.")
-            return
+        if (released || text.isBlank()) return
+        worker.execute {
+            try {
+                val engine = ensurePersianEngine()
+                if (released) return@execute
+                onStatus?.invoke("در حال تولید صدای فارسی…")
+                val audio = engine.generate(text)
+                if (audio.samples.isEmpty()) throw IllegalStateException("مدل صدای فارسی خروجی تولید نکرد.")
+                playPcm(audio.samples, audio.sampleRate)
+            } catch (e: Exception) {
+                onSpeakingChanged?.invoke(false)
+                onError?.invoke("صدای فارسی آماده نشد: ${e.message ?: "خطای نامشخص"}")
+            } finally {
+                onStatus?.invoke("")
+            }
         }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "yara-${System.currentTimeMillis()}")
+    }
+
+    @Synchronized
+    private fun ensurePersianEngine(): OfflineTts {
+        tts?.let { return it }
+        val root = File(appContext.filesDir, "yara-tts")
+        val modelDir = File(root, "vits-piper-fa_IR-amir-medium")
+        val model = File(modelDir, "fa_IR-amir-medium.onnx")
+        val tokens = File(modelDir, "tokens.txt")
+        val espeak = File(modelDir, "espeak-ng-data")
+        if (!model.isFile || !tokens.isFile || !espeak.isDirectory) {
+            onStatus?.invoke("دریافت موتور صدای فارسی (فقط بار اول)…")
+            downloadAndExtract(root)
+        }
+        if (!model.isFile || !tokens.isFile || !espeak.isDirectory) {
+            throw IllegalStateException("فایل‌های مدل فارسی ناقص هستند.")
+        }
+        val config = OfflineTtsConfig(
+            model = OfflineTtsModelConfig(
+                vits = OfflineTtsVitsModelConfig(
+                    model = model.absolutePath,
+                    tokens = tokens.absolutePath,
+                    dataDir = espeak.absolutePath
+                ),
+                numThreads = 2,
+                debug = false,
+                provider = "cpu"
+            )
+        )
+        return OfflineTts(null, config).also { tts = it }
+    }
+
+    private fun downloadAndExtract(root: File) {
+        if (!root.exists() && !root.mkdirs()) throw IllegalStateException("ساخت پوشه مدل ممکن نشد.")
+        val archive = File(root, "persian-voice.tar.bz2.part")
+        val request = Request.Builder()
+            .url("https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2")
+            .build()
+        http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("دریافت مدل با خطای HTTP ${response.code} روبه‌رو شد.")
+            val body = response.body ?: throw IllegalStateException("پاسخ دانلود خالی است.")
+            body.byteStream().use { input ->
+                FileOutputStream(archive).use { output -> input.copyTo(output) }
+            }
+        }
+        val temp = File(root, "extracting")
+        temp.deleteRecursively()
+        if (!temp.mkdirs()) throw IllegalStateException("ساخت پوشه استخراج ممکن نشد.")
+        BZip2CompressorInputStream(BufferedInputStream(FileInputStream(archive))).use { bz ->
+            TarArchiveInputStream(bz).use { tar ->
+                var entry = tar.nextTarEntry
+                while (entry != null) {
+                    val output = File(temp, entry.name).canonicalFile
+                    if (!output.path.startsWith(temp.canonicalPath + File.separator)) {
+                        throw SecurityException("مسیر نامعتبر در آرشیو مدل")
+                    }
+                    if (entry.isDirectory) {
+                        output.mkdirs()
+                    } else {
+                        output.parentFile?.mkdirs()
+                        FileOutputStream(output).use { stream -> tar.copyTo(stream) }
+                    }
+                    entry = tar.nextTarEntry
+                }
+            }
+        }
+        val extractedModelDir = File(temp, "vits-piper-fa_IR-amir-medium")
+        if (!File(extractedModelDir, "fa_IR-amir-medium.onnx").isFile) {
+            throw IllegalStateException("ساختار آرشیو مدل فارسی معتبر نیست.")
+        }
+        val finalDir = File(root, "vits-piper-fa_IR-amir-medium")
+        finalDir.deleteRecursively()
+        if (!extractedModelDir.renameTo(finalDir)) {
+            extractedModelDir.copyRecursively(finalDir, overwrite = true)
+        }
+        temp.deleteRecursively()
+        archive.delete()
+    }
+
+    private fun playPcm(samples: FloatArray, sampleRate: Int) {
+        stopPlayback()
+        val minBuffer = AudioTrack.getMinBufferSize(
+            sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT
+        ).coerceAtLeast(4096)
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(minBuffer)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+        activeTrack = track
+        onSpeakingChanged?.invoke(true)
+        track.play()
+        var offset = 0
+        while (offset < samples.size && !released && activeTrack === track) {
+            val written = track.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
+            if (written < 0) throw IllegalStateException("پخش صدای فارسی با خطای AudioTrack روبه‌رو شد: $written")
+            if (written == 0) Thread.yield() else offset += written
+        }
+        if (activeTrack === track) {
+            runCatching { track.stop() }
+            runCatching { track.flush() }
+        }
+        runCatching { track.release() }
+        if (activeTrack === track) activeTrack = null
+        onSpeakingChanged?.invoke(false)
+    }
+
+    private fun stopPlayback() {
+        val track = activeTrack ?: return
+        activeTrack = null
+        runCatching { track.pause(); track.flush(); track.stop(); track.release() }
+        onSpeakingChanged?.invoke(false)
     }
 
     fun stop() {
         stopListening()
-        tts?.stop()
-        onSpeakingChanged?.invoke(false)
+        stopPlayback()
     }
 
     private fun stopListening() {
@@ -97,8 +240,12 @@ class YaraVoice(context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun release() {
+        released = true
         stop()
-        tts?.shutdown()
-        tts = null
+        worker.shutdownNow()
+        synchronized(this) {
+            runCatching { tts?.release() }
+            tts = null
+        }
     }
 }
