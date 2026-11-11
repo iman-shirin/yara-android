@@ -14,7 +14,7 @@ Yara Android 0.3.0 — Third-party asset and model notices
 - Voice: vits-piper-fa_IR-amir-medium, converted Piper model
 - Model archive: https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2
 - Model card and samples: https://k2-fsa.github.io/sherpa/onnx/tts/all/Persian/vits-piper-fa_IR-amir-medium.html
-- Model license: see the Piper voice's upstream license and metadata. This build uses the model published by sherpa-onnx for fa_IR-amir-medium.
+- Voice: fa_IR-amir-medium from rhasspy/piper-voices; its model card identifies the source speech dataset as CC0. The sherpa-onnx converted archive is used for Android inference.
 - The model is downloaded to app-private storage on first use; generated speech is processed locally.
 
 3) Viewer dependencies
