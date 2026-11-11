@@ -1,7 +1,11 @@
 package com.yara.assistant
 
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -34,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.sin
@@ -60,6 +66,25 @@ class MainActivity : ComponentActivity() {
                     var lines by remember { mutableStateOf(saved) }
                     var input by remember { mutableStateOf("") }
                     var busy by remember { mutableStateOf(false) }
+                    val context = LocalContext.current
+                    val voice = remember { YaraVoice(context) }
+                    var listening by remember { mutableStateOf(false) }
+                    var speaking by remember { mutableStateOf(false) }
+                    var voiceError by remember { mutableStateOf<String?>(null) }
+                    var voiceOutput by remember { mutableStateOf(true) }
+                    val microphonePermission = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        if (granted) voice.startListening()
+                        else voiceError = "برای ورود صوتی، اجازه میکروفون لازم است."
+                    }
+                    DisposableEffect(voice) {
+                        voice.onResult = { recognized -> input = recognized; voiceError = null }
+                        voice.onError = { message -> voiceError = message }
+                        voice.onListeningChanged = { listening = it }
+                        voice.onSpeakingChanged = { speaking = it }
+                        onDispose { voice.release() }
+                    }
                     var showSettings by remember { mutableStateOf(false) }
                     var showConversation by remember { mutableStateOf(saved.isNotEmpty()) }
                     val listState = rememberLazyListState()
@@ -110,7 +135,7 @@ class MainActivity : ComponentActivity() {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    YaraAvatar(isSpeaking = busy, hasConversation = showConversation, modifier = Modifier.size(238.dp))
+                                    YaraAvatar(isSpeaking = speaking, hasConversation = showConversation, modifier = Modifier.size(238.dp))
                                     Spacer(Modifier.height(12.dp))
                                     Text(
                                         when { busy -> "در حال فکر کردن…" ; showConversation -> "من اینجا هستم" ; else -> "سلام، من یارا هستم" },
@@ -172,6 +197,22 @@ class MainActivity : ComponentActivity() {
                                     shape = RoundedCornerShape(22.dp),
                                     maxLines = 4
                                 )
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    FilledTonalButton(
+                                        enabled = !busy && !listening,
+                                        onClick = {
+                                            voiceError = null
+                                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                                voice.startListening()
+                                            } else {
+                                                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        },
+                                        shape = CircleShape,
+                                        contentPadding = PaddingValues(12.dp)
+                                    ) { Text(if (listening) "…" else "🎙") }
+                                    Text(if (listening) "گوش می‌دهم" else "صوت", style = MaterialTheme.typography.labelSmall, color = Color(0xFF9BA8C7))
+                                }
                                 Button(
                                     enabled = input.isNotBlank() && !busy,
                                     onClick = {
@@ -187,12 +228,20 @@ class MainActivity : ComponentActivity() {
                                                 .getOrElse { "اتصال به مدل برقرار نشد: ${it.message}" }
                                             lines = lines + ChatLine("assistant", reply)
                                             runCatching { store.save(lines) }
+                                            if (voiceOutput && !reply.startsWith("اتصال به مدل برقرار نشد:")) voice.speak(reply)
                                             busy = false
                                         }
                                     },
                                     shape = CircleShape,
                                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp)
                                 ) { Text(if (busy) "…" else "ارسال") }
+                            }
+                            if (voiceError != null) {
+                                Text(voiceError!!, color = Color(0xFFFF9C9C), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("پاسخ صوتی", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.labelMedium)
+                                Switch(checked = voiceOutput, onCheckedChange = { voiceOutput = it })
                             }
                         }
                     }
