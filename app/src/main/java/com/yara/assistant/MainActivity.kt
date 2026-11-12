@@ -1,6 +1,7 @@
 package com.yara.assistant
 
 import android.os.Bundle
+import android.os.Build
 import android.webkit.WebView
 import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
@@ -78,6 +79,27 @@ class MainActivity : ComponentActivity() {
                     var voiceError by remember { mutableStateOf<String?>(null) }
                     var voiceStatus by remember { mutableStateOf("") }
                     var voiceOutput by remember { mutableStateOf(true) }
+                    var pendingReminder by remember { mutableStateOf<Pair<String, Long>?>(null) }
+                    val notificationPermission = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        val pending = pendingReminder
+                        pendingReminder = null
+                        if (pending != null) {
+                            val reminderReply = if (granted || Build.VERSION.SDK_INT < 33) {
+                                runCatching {
+                                    val reminderStore = YaraReminderStore(context)
+                                    val id = reminderStore.save(pending.first, pending.second)
+                                    reminderStore.get(id)?.let { YaraReminderScheduler(context).schedule(it) }
+                                    "یادآوری ثبت شد: ${pending.first}"
+                                }.getOrElse { "ثبت یادآوری ناموفق بود: ${it.message}" }
+                            } else {
+                                "مجوز اعلان داده نشد؛ یادآوری ثبت نشد. از تنظیمات اندروید مجوز اعلان یارا را فعال کن."
+                            }
+                            lines = lines + ChatLine("assistant", reminderReply)
+                            lifecycleScope.launch { runCatching { store.save(lines) } }
+                        }
+                    }
                     val microphonePermission = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission()
                     ) { granted ->
@@ -248,7 +270,39 @@ class MainActivity : ComponentActivity() {
                                                         if (saved.isEmpty()) "هنوز موردی در حافظه بلندمدت ثبت نشده است."
                                                         else saved.joinToString("\n") { "${it.id}. [${it.project}] ${it.content}" }
                                                     }
-                                                    null -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                    null -> when (val reminderCommand = YaraReminderCommandParser.parse(msg)) {
+                                                        is YaraReminderCommand.Create -> {
+                                                            if (Build.VERSION.SDK_INT >= 33 &&
+                                                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                                                pendingReminder = reminderCommand.title to reminderCommand.dueAt
+                                                                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                                                "برای ثبت یادآوری، مجوز اعلان درخواست شد."
+                                                            } else {
+                                                                val reminderStore = YaraReminderStore(context)
+                                                                val id = reminderStore.save(reminderCommand.title, reminderCommand.dueAt)
+                                                                reminderStore.get(id)?.let { YaraReminderScheduler(context).schedule(it) }
+                                                                "یادآوری ثبت شد: ${reminderCommand.title}"
+                                                            }
+                                                        }
+                                                        YaraReminderCommand.List -> {
+                                                            val reminders = YaraReminderStore(context).list()
+                                                            if (reminders.isEmpty()) "یادآوری فعالی ثبت نشده است."
+                                                            else reminders.joinToString("\\n") {
+                                                                val whenText = java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale("fa")).format(java.util.Date(it.dueAt))
+                                                                "${it.id}: ${it.title} — $whenText"
+                                                            }
+                                                        }
+                                                        is YaraReminderCommand.Delete -> {
+                                                            YaraReminderScheduler(context).cancel(reminderCommand.id)
+                                                            if (YaraReminderStore(context).delete(reminderCommand.id)) "یادآوری حذف شد."
+                                                            else "یادآوری موردنظر پیدا نشد."
+                                                        }
+                                                        null -> when {
+                                                            msg.startsWith("یادآوری") -> "قالب یادآوری: یادآوری فردا ساعت 09:30 | متن یادآوری یا یادآوری 2026-11-13 09:30 | متن یادآوری"
+                                                            msg.startsWith("حذف یادآوری") -> "برای حذف، شناسه را بنویس: حذف یادآوری 123"
+                                                            else -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                        }
+                                                    }
                                                 }
 
                                             }.getOrElse { "انجام درخواست ناموفق بود: ${it.message}" }
