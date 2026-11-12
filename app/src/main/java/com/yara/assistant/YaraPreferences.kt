@@ -38,8 +38,8 @@ class YaraPreferences(context: Context) {
 
     val fallbackEnabled: Boolean get() = preferences.getBoolean("fallback_enabled", true)
     val primaryProviderId: String get() = preferences.getString("primary_provider", "groq")?.takeIf { it == "groq" || it == "gemini" } ?: "groq"
-    val primaryProvider: ProviderConfig get() = if (primaryProviderId == "gemini") gemini else groq
-    val fallbackProvider: ProviderConfig get() = if (primaryProviderId == "gemini") groq else gemini
+    val primaryProvider: ProviderConfig get() = YaraProviderRouter.primary(primaryProviderId, groq, gemini)
+    val fallbackProvider: ProviderConfig get() = YaraProviderRouter.fallback(primaryProviderId, groq, gemini)
     val baseUrl: String get() = groq.baseUrl
     val model: String get() = groq.model
     val apiKey: String get() = groq.apiKey
