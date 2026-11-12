@@ -287,7 +287,7 @@ class MainActivity : ComponentActivity() {
                                                         YaraReminderCommand.List -> {
                                                             val reminders = YaraReminderStore(context).list()
                                                             if (reminders.isEmpty()) "یادآوری فعالی ثبت نشده است."
-                                                            else reminders.joinToString("\\n") {
+                                                            else reminders.joinToString("\n") {
                                                                 val whenText = java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale("fa")).format(java.util.Date(it.dueAt))
                                                                 "${it.id}: ${it.title} — $whenText"
                                                             }
