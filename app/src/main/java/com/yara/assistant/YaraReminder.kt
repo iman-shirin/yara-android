@@ -24,23 +24,37 @@ sealed class YaraReminderCommand {
 }
 
 object YaraReminderCommandParser {
-    private val createPattern = Regex("^یادآوری\\s+(\\d{4}-\\d{2}-\\d{2})\\s+(\\d{2}:\\d{2})\\s*\\|\\s*(.+)$")
+    private val absolutePattern = Regex("^یادآوری\\s+(\\d{4}-\\d{2}-\\d{2})\\s+(\\d{2}:\\d{2})\\s*\\|\\s*(.+)$")
+    private val relativePattern = Regex("^یادآوری\\s+(امروز|فردا)\\s+(?:ساعت\\s*)?(\\d{2}:\\d{2})\\s*\\|\\s*(.+)$")
 
     fun parse(input: String, now: Long = System.currentTimeMillis()): YaraReminderCommand? {
         val clean = input.trim().toEnglishDigits()
         if (clean == "یادآوری‌ها" || clean == "فهرست یادآوری‌ها") return YaraReminderCommand.List
         val delete = Regex("^حذف یادآوری\\s+(\\d+)$").matchEntire(clean)
         if (delete != null) return delete.groupValues[1].toLongOrNull()?.let(YaraReminderCommand::Delete)
-        val match = createPattern.matchEntire(clean) ?: return null
-        return runCatching {
-            val local = LocalDateTime.parse(
-                "${match.groupValues[1]} ${match.groupValues[2]}",
-                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            )
-            val dueAt = local.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            require(dueAt > now) { "زمان یادآوری باید در آینده باشد." }
-            YaraReminderCommand.Create(dueAt, match.groupValues[3].trim())
-        }.getOrNull()
+
+        val absolute = absolutePattern.matchEntire(clean)
+        val relative = relativePattern.matchEntire(clean)
+        val dueAtAndTitle = runCatching {
+            when {
+                absolute != null -> {
+                    val local = LocalDateTime.parse(
+                        "${absolute.groupValues[1]} ${absolute.groupValues[2]}",
+                        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                    )
+                    local to absolute.groupValues[3].trim()
+                }
+                relative != null -> {
+                    val today = java.time.Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
+                    val date = if (relative.groupValues[1] == "فردا") today.plusDays(1) else today
+                    LocalDateTime.of(date, java.time.LocalTime.parse(relative.groupValues[2])) to relative.groupValues[3].trim()
+                }
+                else -> return null
+            }
+        }.getOrNull() ?: return null
+        val dueAt = dueAtAndTitle.first.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        if (dueAt <= now || dueAtAndTitle.second.length !in 2..300) return null
+        return YaraReminderCommand.Create(dueAt, dueAtAndTitle.second)
     }
 
     private fun String.toEnglishDigits(): String {
