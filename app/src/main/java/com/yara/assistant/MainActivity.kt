@@ -317,10 +317,36 @@ class MainActivity : ComponentActivity() {
                                                             if (YaraReminderStore(context).delete(reminderCommand.id)) "یادآوری حذف شد."
                                                             else "یادآوری موردنظر پیدا نشد."
                                                         }
-                                                        null -> when {
-                                                            msg.startsWith("یادآوری") -> "قالب یادآوری: یادآوری فردا ساعت 09:30 | متن یادآوری یا یادآوری 2026-11-13 09:30 | متن یادآوری"
-                                                            msg.startsWith("حذف یادآوری") -> "برای حذف، شناسه را بنویس: حذف یادآوری 123"
-                                                            else -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                        null -> when (val taskCommand = YaraTaskCommandParser.parse(msg)) {
+                                                            is YaraTaskCommand.Add -> {
+                                                                val id = YaraTaskStore(context).add(taskCommand.title)
+                                                                "کار جدید با شناسه $id ثبت شد."
+                                                            }
+                                                            YaraTaskCommand.ListPending -> {
+                                                                val tasks = YaraTaskStore(context).list(completed = false)
+                                                                if (tasks.isEmpty()) "کار باز و ناتمامی ثبت نشده است."
+                                                                else tasks.joinToString("\\n") { "${it.id}. ${it.title}" }
+                                                            }
+                                                            YaraTaskCommand.ListCompleted -> {
+                                                                val tasks = YaraTaskStore(context).list(completed = true)
+                                                                if (tasks.isEmpty()) "هنوز کاری تکمیل‌شده ثبت نشده است."
+                                                                else tasks.joinToString("\\n") { "${it.id}. ${it.title}" }
+                                                            }
+                                                            is YaraTaskCommand.Complete -> {
+                                                                if (YaraTaskStore(context).complete(taskCommand.id)) "کار به‌عنوان انجام‌شده ثبت شد."
+                                                                else "کار باز موردنظر پیدا نشد."
+                                                            }
+                                                            is YaraTaskCommand.Delete -> {
+                                                                if (YaraTaskStore(context).delete(taskCommand.id)) "کار حذف شد."
+                                                                else "کار موردنظر پیدا نشد."
+                                                            }
+                                                            null -> when {
+                                                                msg.startsWith("یادآوری") -> "قالب یادآوری: یادآوری فردا ساعت 09:30 | متن یادآوری یا یادآوری 2026-11-13 09:30 | متن یادآوری"
+                                                                msg.startsWith("حذف یادآوری") -> "برای حذف، شناسه را بنویس: حذف یادآوری 123"
+                                                                msg.startsWith("کار جدید") || msg.startsWith("وظیفه جدید") -> "قالب ثبت کار: کار جدید: عنوان کار"
+                                                                msg.startsWith("انجام شد") || msg.startsWith("حذف کار") -> "شناسه کار را هم وارد کن؛ برای نمونه: انجام شد 123"
+                                                                else -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                            }
                                                         }
                                                     }
                                                 }
