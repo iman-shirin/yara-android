@@ -17,19 +17,19 @@ class YaraProvider(private val prefs: YaraPreferences) {
         .callTimeout(90, TimeUnit.SECONDS).connectTimeout(20, TimeUnit.SECONDS).build()
 
     suspend fun reply(history: List<ChatLine>, message: String, memories: List<String> = emptyList()): String = withContext(Dispatchers.IO) {
-        val primary = prefs.groq
-        require(primary.apiKey.isNotBlank()) { "ابتدا کلید API سرویس Groq را در تنظیمات وارد کن." }
+        val primary = prefs.primaryProvider
+        require(primary.apiKey.isNotBlank()) { "ابتدا کلید API سرویس ${primary.name} را در تنظیمات وارد کن." }
         try {
             return@withContext request(primary, history, message, memories)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            val secondary = prefs.gemini
+            val secondary = prefs.fallbackProvider
             if (!prefs.fallbackEnabled || secondary.apiKey.isBlank() || !isRetryable(error)) throw error
             try {
                 return@withContext request(secondary, history, message, memories)
             } catch (fallbackError: Exception) {
                 if (fallbackError is CancellationException) throw fallbackError
-                throw IOException("اتصال Groq و Gemini ناموفق بود. Groq: ${error.message}; Gemini: ${fallbackError.message}", fallbackError)
+                throw IOException("اتصال سرویس اصلی و جایگزین ناموفق بود. ${primary.name}: ${error.message}; ${secondary.name}: ${fallbackError.message}", fallbackError)
             }
         }
     }
