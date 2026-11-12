@@ -17,6 +17,7 @@ class YaraTaskCommandParserTest {
     fun parsesTaskLists() {
         assertEquals(YaraTaskCommand.ListPending, YaraTaskCommandParser.parse("کارها"))
         assertEquals(YaraTaskCommand.ListCompleted, YaraTaskCommandParser.parse("کارهای انجام‌شده"))
+        assertEquals(YaraTaskCommand.ListCompleted, YaraTaskCommandParser.parse("کارهای انجام شده"))
     }
 
     @Test
