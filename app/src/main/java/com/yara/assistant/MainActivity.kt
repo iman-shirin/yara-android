@@ -233,25 +233,24 @@ class MainActivity : ComponentActivity() {
                                             runCatching { store.save(lines) }
                                             val memoryStore = YaraMemoryStore(context)
                                             val reply = runCatching {
-                                                when {
-                                                    msg.startsWith("به خاطر بسپار") -> {
-                                                        val value = msg.removePrefix("به خاطر بسپار").trim().trimStart(':', '،', ' ')
-                                                        memoryStore.save(value)
+                                                when (val command = YaraMemoryCommandParser.parse(msg)) {
+                                                    is YaraMemoryCommand.Save -> {
+                                                        memoryStore.save(command.content)
                                                         "این مورد در حافظه بلندمدت یارا ذخیره شد."
                                                     }
-                                                    msg.startsWith("فراموش کن") -> {
-                                                        val value = msg.removePrefix("فراموش کن").trim().trimStart(':', '،', ' ')
-                                                        val removed = memoryStore.deleteMatching(value)
+                                                    is YaraMemoryCommand.Forget -> {
+                                                        val removed = memoryStore.deleteMatching(command.content)
                                                         if (removed > 0) "$removed مورد از حافظه حذف شد."
                                                         else "مورد مطابقی در حافظه پیدا نشد."
                                                     }
-                                                    msg == "حافظه‌هایم را فهرست کن" || msg == "فهرست حافظه" -> {
+                                                    YaraMemoryCommand.List -> {
                                                         val saved = memoryStore.list(limit = 50)
                                                         if (saved.isEmpty()) "هنوز موردی در حافظه بلندمدت ثبت نشده است."
                                                         else saved.joinToString("\\n") { "${it.id}. [${it.project}] ${it.content}" }
                                                     }
-                                                    else -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                    null -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
                                                 }
+
                                             }.getOrElse { "انجام درخواست ناموفق بود: ${it.message}" }
                                             lines = lines + ChatLine("assistant", reply)
                                             runCatching { store.save(lines) }
