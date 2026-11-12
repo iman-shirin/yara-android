@@ -10,8 +10,8 @@ android {
         applicationId = "com.yara.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.3.1"
+        versionCode = 6
+        versionName = "0.3.3"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     compileOptions {
@@ -39,5 +39,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
     implementation(files("libs/sherpa-onnx-2.0.1.aar"))
     implementation("org.apache.commons:commons-compress:1.27.1")
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

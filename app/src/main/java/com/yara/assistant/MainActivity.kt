@@ -231,8 +231,27 @@ class MainActivity : ComponentActivity() {
                                         busy = true
                                         lifecycleScope.launch {
                                             runCatching { store.save(lines) }
-                                            val reply = runCatching { YaraProvider(prefs).reply(previous, msg) }
-                                                .getOrElse { "اتصال به مدل برقرار نشد: ${it.message}" }
+                                            val memoryStore = YaraMemoryStore(context)
+                                            val reply = runCatching {
+                                                when (val command = YaraMemoryCommandParser.parse(msg)) {
+                                                    is YaraMemoryCommand.Save -> {
+                                                        memoryStore.save(command.content)
+                                                        "این مورد در حافظه بلندمدت یارا ذخیره شد."
+                                                    }
+                                                    is YaraMemoryCommand.Forget -> {
+                                                        val removed = memoryStore.deleteMatching(command.content)
+                                                        if (removed > 0) "$removed مورد از حافظه حذف شد."
+                                                        else "مورد مطابقی در حافظه پیدا نشد."
+                                                    }
+                                                    YaraMemoryCommand.List -> {
+                                                        val saved = memoryStore.list(limit = 50)
+                                                        if (saved.isEmpty()) "هنوز موردی در حافظه بلندمدت ثبت نشده است."
+                                                        else saved.joinToString("\n") { "${it.id}. [${it.project}] ${it.content}" }
+                                                    }
+                                                    null -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                }
+
+                                            }.getOrElse { "انجام درخواست ناموفق بود: ${it.message}" }
                                             lines = lines + ChatLine("assistant", reply)
                                             runCatching { store.save(lines) }
                                             if (voiceOutput && !reply.startsWith("اتصال به مدل برقرار نشد:")) voice.speak(reply)

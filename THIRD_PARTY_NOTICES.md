@@ -1,4 +1,4 @@
-Yara Android 0.3.0 — Third-party asset and model notices
+Yara Android 0.3.3 — Third-party asset and model notices
 
 1) Anime avatar
 - File: app/src/main/assets/yara_anime_girl.vrm (downloaded by CI at build time)
@@ -17,6 +17,9 @@ Yara Android 0.3.0 — Third-party asset and model notices
 - Voice: fa_IR-amir-medium from rhasspy/piper-voices; its model card identifies the source speech dataset as CC0. The sherpa-onnx converted archive is used for Android inference.
 - The model is downloaded to app-private storage on first use; generated speech is processed locally.
 
-3) Viewer dependencies
-- three.js: MIT — https://threejs.org/
-- @pixiv/three-vrm: MIT — https://github.com/pixiv/three-vrm
+3) Viewer dependencies (bundled at build time)
+- three.js 0.170.0: MIT — https://threejs.org/
+- @pixiv/three-vrm 3.3.0: MIT — https://github.com/pixiv/three-vrm
+- esbuild 0.24.2 (build-time bundler; not shipped as a runtime): MIT — https://github.com/evanw/esbuild
+
+The JavaScript viewer bundle is generated from pinned dependency versions by the Android CI workflow. No CDN request is required by the avatar renderer at runtime.

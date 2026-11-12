@@ -26,6 +26,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Bundle Three.js and VRM viewer for offline runtime
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts three@0.170.0 @pixiv/three-vrm@3.3.0 esbuild@0.24.2
+          npx esbuild app/src/main/assets/yara_avatar.js --bundle --format=esm --platform=browser --target=es2020 --outfile=app/src/main/assets/yara_avatar.bundle.js
+          test -s app/src/main/assets/yara_avatar.bundle.js
       - name: Fetch licensed CC0 anime VRM avatar
         run: |
           mkdir -p app/src/main/assets
@@ -38,10 +43,47 @@ jobs:
             https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar \
             --output app/libs/sherpa-onnx-2.0.1.aar
           test "$(stat -c%s app/libs/sherpa-onnx-2.0.1.aar)" -gt 10000000
+      - name: Validate bundled VRM and offline renderer assets
+        run: |
+          python3 - <<'PY'
+          import json, struct, zipfile
+          from pathlib import Path
+          model = Path("app/src/main/assets/yara_anime_girl.vrm").read_bytes()
+          assert len(model) >= 1_000_000, "VRM asset is unexpectedly small"
+          magic, version, declared_length = struct.unpack("<4sII", model[:12])
+          assert magic == b"glTF" and version == 2, "Avatar is not a GLB 2.0 container"
+          assert declared_length == len(model), "GLB declared length does not match file length"
+          chunk_length, chunk_type = struct.unpack("<II", model[12:20])
+          assert chunk_type == 0x4E4F534A, "First GLB chunk is not JSON"
+          document = json.loads(model[20:20 + chunk_length].decode("utf-8").rstrip(" \\t\\r\\n\\0"))
+          extensions = document.get("extensionsUsed", [])
+          assert "VRM" in extensions or "VRMC_vrm" in extensions, "GLB does not declare a VRM extension"
+          bundle = Path("app/src/main/assets/yara_avatar.bundle.js").read_bytes()
+          assert b"cdn.jsdelivr.net" not in bundle and b"unpkg.com" not in bundle, "Avatar bundle still references a CDN"
+          assert b"yara_anime_girl.vrm" in bundle, "Avatar bundle does not request the packaged model"
+          print("Valid GLB/VRM asset; renderer bundle has no CDN dependency.")
+          PY
       - name: Verify Gradle configuration
         run: gradle --no-daemon tasks --all
       - name: Run unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Verify unit test report is non-empty and passing
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          files = glob.glob("app/build/test-results/testDebugUnitTest/TEST-*.xml")
+          assert files, "No unit test XML reports were generated"
+          tests = failures = errors = skipped = 0
+          for path in files:
+              root = ET.parse(path).getroot()
+              tests += int(root.attrib.get("tests", 0))
+              failures += int(root.attrib.get("failures", 0))
+              errors += int(root.attrib.get("errors", 0))
+              skipped += int(root.attrib.get("skipped", 0))
+          assert tests > 0, "Unit test task completed without executing tests"
+          assert failures == 0 and errors == 0, f"Unit test failures={failures}, errors={errors}"
+          print(f"Unit tests passed: {tests}; skipped: {skipped}; failures: {failures}; errors: {errors}")
+          PY
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Verify APK exists and calculate SHA-256

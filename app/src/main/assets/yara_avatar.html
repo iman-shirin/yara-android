@@ -7,90 +7,13 @@
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
 #stage{position:absolute;inset:0}
 #hint{position:absolute;left:0;right:0;bottom:5%;text-align:center;color:#aab8d7;font:12px sans-serif;opacity:.9;pointer-events:none}
-#error{display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;color:#f5d9e8;font:14px sans-serif;padding:20px}
+#error{display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;color:#f5d9e8;font:14px sans-serif;padding:20px;direction:rtl}
 </style>
-<script type="importmap">
-{"imports":{
- "three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
- "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
- "@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.3.0/lib/three-vrm.module.js"
-}}
-</script>
 </head>
 <body>
-<div id="stage"></div><div id="hint">یارا</div><div id="error"></div>
-<script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-
-const host=document.getElementById('stage');
-const hint=document.getElementById('hint');
-const errorBox=document.getElementById('error');
-let speaking=false, connected=false, vrm=null, mouthPhase=0;
-const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(27,1,0.1,100);
-camera.position.set(0,1.43,1.52);
-const renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:'low-power'});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.6));
-renderer.setSize(host.clientWidth,host.clientHeight);
-renderer.outputColorSpace=THREE.SRGBColorSpace;
-renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.1;
-host.appendChild(renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xdbe7ff,0x22223b,2.0));
-const key=new THREE.DirectionalLight(0xffe4ee,2.5);key.position.set(1.5,2.5,3);scene.add(key);
-const rim=new THREE.DirectionalLight(0x7b8dff,2.2);rim.position.set(-2,1, -2);scene.add(rim);
-
-const loader=new GLTFLoader();
-loader.register(parser=>new VRMLoaderPlugin(parser));
-loader.load('./yara_anime_girl.vrm',gltf=>{
-  vrm=gltf.userData.vrm;
-  if(!vrm) throw new Error('VRM avatar metadata missing');
-  VRMUtils.rotateVRM0(vrm);
-  scene.add(vrm.scene);
-  const bounds=new THREE.Box3().setFromObject(vrm.scene);
-  const height=bounds.max.y-bounds.min.y;
-  const targetY=bounds.min.y+height*0.83;
-  camera.position.set(0,targetY,Math.max(1.05,height*0.78));
-  camera.lookAt(0,targetY,0);
-  connected=true;hint.textContent='یارا';
-},undefined,err=>{
-  console.error('Yara VRM load failed',err);
-  errorBox.style.display='flex';
-  errorBox.textContent='بارگذاری چهره سه‌بعدی ناموفق بود. اتصال اینترنت و WebGL را بررسی کنید.';
-  hint.style.display='none';
-});
-
-window.yaraSetState=(isSpeaking,hasConversation)=>{
-  speaking=!!isSpeaking;
-  if(connected) hint.textContent=speaking?'در حال صحبت…':'یارا';
-};
-
-const clock=new THREE.Clock();
-function animate(){
- requestAnimationFrame(animate);
- const dt=Math.min(clock.getDelta(),0.05), t=clock.elapsedTime;
- if(vrm){
-   vrm.update(dt);
-   const ex=vrm.expressionManager;
-   if(ex){
-     const blink=t%4.25;
-     const blinkValue=blink>4.02?Math.max(0,1-(blink-4.02)/0.12):blink>4.14?Math.min(1,(blink-4.14)/0.11):0;
-     ex.setValue('blink',blinkValue);
-     mouthPhase+=dt*13;
-     ex.setValue('aa',speaking?(0.12+0.35*Math.abs(Math.sin(mouthPhase))):0.015);
-     ex.setValue('ih',speaking?(0.08+0.15*Math.abs(Math.sin(mouthPhase*0.7))):0);
-   }
-   const neck=vrm.humanoid?.getNormalizedBoneNode('neck');
-   if(neck){neck.rotation.z=Math.sin(t*0.55)*0.025;neck.rotation.y=Math.sin(t*0.32)*0.035;}
- }
- renderer.render(scene,camera);
-}
-animate();
-new ResizeObserver(()=>{
- const w=Math.max(1,host.clientWidth),h=Math.max(1,host.clientHeight);
- camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
-}).observe(host);
-</script>
-</body></html>
+<div id="stage"></div>
+<div id="hint">در حال آماده‌سازی یارا…</div>
+<div id="error"></div>
+<script type="module" src="./yara_avatar.bundle.js"></script>
+</body>
+</html>
