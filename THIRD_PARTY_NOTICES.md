@@ -1,4 +1,4 @@
-Yara Android 0.3.5 — Third-party asset and model notices
+Yara Android 0.3.6 — Third-party asset and model notices
 
 1) Anime avatar
 - File: app/src/main/assets/yara_anime_girl.vrm (downloaded by CI at build time)
