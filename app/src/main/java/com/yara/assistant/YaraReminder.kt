@@ -105,7 +105,9 @@ class YaraReminderStore(context: Context) : SQLiteOpenHelper(
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
-                    get(cursor.getLong(0))?.let(::add)
+                    val id = cursor.getLong(0)
+                    val title = secrets.read("reminder_$id")
+                    if (title.isNotBlank()) add(YaraReminder(id, title, cursor.getLong(1)))
                 }
             }
         }
