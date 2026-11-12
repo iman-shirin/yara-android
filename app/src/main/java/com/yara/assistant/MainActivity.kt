@@ -330,7 +330,7 @@ class MainActivity : ComponentActivity() {
                                                             YaraTaskCommand.ListCompleted -> {
                                                                 val tasks = YaraTaskStore(context).list(completed = true)
                                                                 if (tasks.isEmpty()) "هنوز کاری تکمیل‌شده ثبت نشده است."
-                                                                else tasks.joinToString("\\n") { "${it.id}. ${it.title}" }
+                                                                else tasks.joinToString("\n") { "${it.id}. ${it.title}" }
                                                             }
                                                             is YaraTaskCommand.Complete -> {
                                                                 if (YaraTaskStore(context).complete(taskCommand.id)) "کار به‌عنوان انجام‌شده ثبت شد."
