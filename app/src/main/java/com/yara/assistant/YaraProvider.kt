@@ -16,17 +16,17 @@ class YaraProvider(private val prefs: YaraPreferences) {
     private val client = OkHttpClient.Builder()
         .callTimeout(90, TimeUnit.SECONDS).connectTimeout(20, TimeUnit.SECONDS).build()
 
-    suspend fun reply(history: List<ChatLine>, message: String): String = withContext(Dispatchers.IO) {
+    suspend fun reply(history: List<ChatLine>, message: String, memories: List<String> = emptyList()): String = withContext(Dispatchers.IO) {
         val primary = prefs.groq
         require(primary.apiKey.isNotBlank()) { "ابتدا کلید API سرویس Groq را در تنظیمات وارد کن." }
         try {
-            return@withContext request(primary, history, message)
+            return@withContext request(primary, history, message, memories)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             val secondary = prefs.gemini
             if (!prefs.fallbackEnabled || secondary.apiKey.isBlank() || !isRetryable(error)) throw error
             try {
-                return@withContext request(secondary, history, message)
+                return@withContext request(secondary, history, message, memories)
             } catch (fallbackError: Exception) {
                 if (fallbackError is CancellationException) throw fallbackError
                 throw IOException("اتصال Groq و Gemini ناموفق بود. Groq: ${error.message}; Gemini: ${fallbackError.message}", fallbackError)
@@ -38,10 +38,17 @@ class YaraProvider(private val prefs: YaraPreferences) {
         error is IOException || error.message?.contains("HTTP 408") == true ||
             error.message?.contains("HTTP 429") == true || error.message?.contains("HTTP 5") == true
 
-    private fun request(provider: ProviderConfig, history: List<ChatLine>, message: String): String {
+    private fun request(provider: ProviderConfig, history: List<ChatLine>, message: String, memories: List<String>): String {
         require(provider.apiKey.isNotBlank()) { "کلید API سرویس ${provider.name} وارد نشده است." }
-        val messages = JSONArray().put(JSONObject().put("role", "system")
-            .put("content", "تو یارا هستی؛ دستیار فارسی‌زبان، دقیق، امن و کاربردی."))
+        val memoryContext = memories.take(8).joinToString("\n")
+        val systemPrompt = buildString {
+            append("تو یارا هستی؛ دستیار فارسی‌زبان، دقیق، امن و کاربردی.")
+            if (memoryContext.isNotBlank()) {
+                append("\n\nاطلاعات حافظه بلندمدت کاربر که برای درخواست فعلی مرتبط تشخیص داده شده‌اند؛ فقط در صورت ارتباط استفاده کن و آن‌ها را به‌عنوان حقیقت قطعی درباره موضوعات متغیر تلقی نکن:\n")
+                append(memoryContext)
+            }
+        }
+        val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
         history.takeLast(30).forEach { messages.put(JSONObject().put("role", it.role).put("content", it.content)) }
         messages.put(JSONObject().put("role", "user").put("content", message))
         val body = JSONObject().put("model", provider.model).put("messages", messages).toString()
