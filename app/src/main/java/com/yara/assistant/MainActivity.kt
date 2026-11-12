@@ -345,7 +345,21 @@ class MainActivity : ComponentActivity() {
                                                                 msg.startsWith("حذف یادآوری") -> "برای حذف، شناسه را بنویس: حذف یادآوری 123"
                                                                 msg.startsWith("کار جدید") || msg.startsWith("وظیفه جدید") -> "قالب ثبت کار: کار جدید: عنوان کار"
                                                                 msg.startsWith("انجام شد") || msg.startsWith("حذف کار") -> "شناسه کار را هم وارد کن؛ برای نمونه: انجام شد 123"
-                                                                else -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                                else -> when (val webCommand = YaraWebSearchCommandParser.parse(msg)) {
+                                                                    is YaraWebSearchCommand.Search -> {
+                                                                        val search = YaraWebSearch()
+                                                                        val results = search.search(webCommand.query)
+                                                                        if (results.isEmpty()) "برای این عبارت نتیجه قابل‌نمایشی پیدا نشد."
+                                                                        else YaraProvider(prefs).reply(
+                                                                            previous, msg, memoryStore.relevant(msg), search.asModelContext(results)
+                                                                        )
+                                                                    }
+                                                                    null -> if (msg.startsWith("جستجو") || msg.startsWith("در اینترنت جستجو")) {
+                                                                        "قالب جستجو: جستجو: عبارت موردنظر"
+                                                                    } else {
+                                                                        YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
