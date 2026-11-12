@@ -106,6 +106,13 @@ class MainActivity : ComponentActivity() {
                         if (granted) voice.startListening()
                         else voiceError = "برای ورود صوتی، اجازه میکروفون لازم است."
                     }
+                    LaunchedEffect(Unit) {
+                        if (Build.VERSION.SDK_INT < 33 ||
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                            val scheduler = YaraReminderScheduler(context)
+                            YaraReminderStore(context).list().forEach(scheduler::schedule)
+                        }
+                    }
                     DisposableEffect(voice) {
                         voice.onResult = { recognized -> input = recognized; voiceError = null }
                         voice.onError = { message -> voiceError = message }
