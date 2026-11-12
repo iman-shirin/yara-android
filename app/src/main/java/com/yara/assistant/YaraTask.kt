@@ -28,7 +28,7 @@ object YaraTaskCommandParser {
         if (clean == "کارها" || clean == "فهرست کارها" || clean == "وظایف") {
             return YaraTaskCommand.ListPending
         }
-        if (clean == "کارهای انجام‌شده" || clean == "کارهای تکمیل‌شده") {
+        if (clean in setOf("کارهای انجام‌شده", "کارهای انجام شده", "کارهای تکمیل‌شده", "کارهای تکمیل شده")) {
             return YaraTaskCommand.ListCompleted
         }
         val complete = Regex("^(?:انجام شد|تکمیل کار)\\s+(\\d+)$").matchEntire(clean)
