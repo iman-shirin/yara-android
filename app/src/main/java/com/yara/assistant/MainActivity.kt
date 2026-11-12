@@ -325,7 +325,7 @@ class MainActivity : ComponentActivity() {
                                                             YaraTaskCommand.ListPending -> {
                                                                 val tasks = YaraTaskStore(context).list(completed = false)
                                                                 if (tasks.isEmpty()) "کار باز و ناتمامی ثبت نشده است."
-                                                                else tasks.joinToString("\\n") { "${it.id}. ${it.title}" }
+                                                                else tasks.joinToString("\n") { "${it.id}. ${it.title}" }
                                                             }
                                                             YaraTaskCommand.ListCompleted -> {
                                                                 val tasks = YaraTaskStore(context).list(completed = true)
