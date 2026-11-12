@@ -440,6 +440,7 @@ private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
     var geminiModel by remember { mutableStateOf(initialGemini.model) }
     var geminiKey by remember { mutableStateOf(initialGemini.apiKey) }
     var fallback by remember { mutableStateOf(prefs.fallbackEnabled) }
+    var primaryProviderId by remember { mutableStateOf(prefs.primaryProviderId) }
     var error by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -450,20 +451,28 @@ private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
                 Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("سرویس اصلی: Groq", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                Text("انتخاب سرویس اصلی", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = primaryProviderId == "groq", onClick = { primaryProviderId = "groq" })
+                    Text("Groq")
+                    Spacer(Modifier.width(18.dp))
+                    RadioButton(selected = primaryProviderId == "gemini", onClick = { primaryProviderId = "gemini" })
+                    Text("Google Gemini")
+                }
+                Text("تنظیمات Groq", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
                 OutlinedTextField(groqBase, { groqBase = it }, label = { Text("نشانی پایه Groq") }, singleLine = true)
                 OutlinedTextField(groqModel, { groqModel = it }, label = { Text("مدل Groq") }, singleLine = true)
                 OutlinedTextField(groqKey, { groqKey = it }, label = { Text("کلید API Groq") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
 
                 Divider()
-                Text("سرویس جایگزین: Google Gemini", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                Text("تنظیمات Google Gemini", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
                 OutlinedTextField(geminiBase, { geminiBase = it }, label = { Text("نشانی پایه Gemini") }, singleLine = true)
                 OutlinedTextField(geminiModel, { geminiModel = it }, label = { Text("مدل Gemini") }, singleLine = true)
                 OutlinedTextField(geminiKey, { geminiKey = it }, label = { Text("کلید API Gemini") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = fallback, onCheckedChange = { fallback = it })
-                    Text("استفاده خودکار از Gemini هنگام اختلال Groq")
+                    Text("استفاده از ${if (primaryProviderId == "groq") "Gemini" else "Groq"} هنگام اختلال سرویس اصلی")
                 }
                 Text("کلیدها به‌صورت رمزنگاری‌شده در Android Keystore نگهداری می‌شوند. کلیدها را در چت یا مخزن کد منتشر نکن.", style = MaterialTheme.typography.bodySmall)
                 if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -472,7 +481,7 @@ private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
         confirmButton = {
             TextButton(onClick = {
                 runCatching {
-                    prefs.saveProviders(groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey, fallback)
+                    prefs.saveProviders(groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey, fallback, primaryProviderId)
                 }.onSuccess { close() }
                     .onFailure { error = it.message ?: "ذخیره تنظیمات ناموفق بود." }
             }) { Text("ذخیره") }
