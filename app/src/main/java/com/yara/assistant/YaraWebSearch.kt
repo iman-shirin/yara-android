@@ -7,6 +7,8 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class YaraSearchResult(val title: String, val url: String, val snippet: String)
 
@@ -32,7 +34,7 @@ class YaraWebSearch {
         .followRedirects(true)
         .build()
 
-    fun search(query: String, limit: Int = 5): List<YaraSearchResult> {
+    suspend fun search(query: String, limit: Int = 5): List<YaraSearchResult> = withContext(Dispatchers.IO) {
         require(query.trim().length in 2..240) { "عبارت جستجو باید بین ۲ تا ۲۴۰ نویسه باشد." }
         val encoded = URLEncoder.encode(query.trim(), StandardCharsets.UTF_8.name())
         val request = Request.Builder()
@@ -42,7 +44,7 @@ class YaraWebSearch {
             .get()
             .build()
 
-        return client.newCall(request).execute().use { response ->
+        client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("جستجوی اینترنتی با خطای HTTP ${response.code} روبه‌رو شد.")
             val html = response.body?.string().orEmpty()
             val document = Jsoup.parse(html)
