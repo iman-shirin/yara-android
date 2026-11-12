@@ -56,6 +56,19 @@ class MainActivity : ComponentActivity() {
     private val prefs by lazy { YaraPreferences(this) }
     private val store by lazy { ChatStore(this) }
 
+    override fun onResume() {
+        super.onResume()
+        if (Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            lifecycleScope.launch {
+                runCatching {
+                    val scheduler = YaraReminderScheduler(this@MainActivity)
+                    YaraReminderStore(this@MainActivity).list().forEach(scheduler::schedule)
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch {
