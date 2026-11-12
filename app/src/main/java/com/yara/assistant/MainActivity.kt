@@ -246,7 +246,7 @@ class MainActivity : ComponentActivity() {
                                                     YaraMemoryCommand.List -> {
                                                         val saved = memoryStore.list(limit = 50)
                                                         if (saved.isEmpty()) "هنوز موردی در حافظه بلندمدت ثبت نشده است."
-                                                        else saved.joinToString("\\n") { "${it.id}. [${it.project}] ${it.content}" }
+                                                        else saved.joinToString("\n") { "${it.id}. [${it.project}] ${it.content}" }
                                                     }
                                                     null -> YaraProvider(prefs).reply(previous, msg, memoryStore.relevant(msg))
                                                 }
