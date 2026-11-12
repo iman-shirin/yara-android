@@ -37,23 +37,28 @@ class YaraPreferences(context: Context) {
     )
 
     val fallbackEnabled: Boolean get() = preferences.getBoolean("fallback_enabled", true)
+    val primaryProviderId: String get() = preferences.getString("primary_provider", "groq")?.takeIf { it == "groq" || it == "gemini" } ?: "groq"
+    val primaryProvider: ProviderConfig get() = if (primaryProviderId == "gemini") gemini else groq
+    val fallbackProvider: ProviderConfig get() = if (primaryProviderId == "gemini") groq else gemini
     val baseUrl: String get() = groq.baseUrl
     val model: String get() = groq.model
     val apiKey: String get() = groq.apiKey
 
     fun saveProviders(groqBase: String, groqModel: String, groqKey: String,
-                      geminiBase: String, geminiModel: String, geminiKey: String, fallback: Boolean) {
+                      geminiBase: String, geminiModel: String, geminiKey: String, fallback: Boolean,
+                      primaryProviderId: String) {
         require(groqBase.startsWith("https://", true)) { "نشانی Groq باید با HTTPS شروع شود." }
         require(groqModel.isNotBlank()) { "نام مدل Groq خالی است." }
         require(geminiBase.startsWith("https://", true)) { "نشانی Gemini باید با HTTPS شروع شود." }
         require(geminiModel.isNotBlank()) { "نام مدل Gemini خالی است." }
+        require(primaryProviderId == "groq" || primaryProviderId == "gemini") { "سرویس اصلی معتبر نیست." }
         secureSecrets.write("groq_api_key", groqKey.trim())
         secureSecrets.write("gemini_api_key", geminiKey.trim())
         preferences.edit().putString("base", groqBase.trim()).putString("model", groqModel.trim())
             .putString("gemini_base", geminiBase.trim()).putString("gemini_model", geminiModel.trim())
-            .putBoolean("fallback_enabled", fallback).remove("key").apply()
+            .putBoolean("fallback_enabled", fallback).putString("primary_provider", primaryProviderId).remove("key").apply()
     }
 
     fun save(base: String, model: String, key: String) =
-        saveProviders(base, model, key, gemini.baseUrl, gemini.model, gemini.apiKey, fallbackEnabled)
+        saveProviders(base, model, key, gemini.baseUrl, gemini.model, gemini.apiKey, fallbackEnabled, primaryProviderId)
 }
