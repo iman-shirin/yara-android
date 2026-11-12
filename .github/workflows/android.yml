@@ -26,6 +26,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Bundle Three.js and VRM viewer for offline runtime
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts three@0.170.0 @pixiv/three-vrm@3.3.0 esbuild@0.24.2
+          npx esbuild app/src/main/assets/yara_avatar.js --bundle --format=esm --platform=browser --target=es2020 --outfile=app/src/main/assets/yara_avatar.bundle.js
+          test -s app/src/main/assets/yara_avatar.bundle.js
       - name: Fetch licensed CC0 anime VRM avatar
         run: |
           mkdir -p app/src/main/assets
