@@ -43,6 +43,26 @@ jobs:
             https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar \
             --output app/libs/sherpa-onnx-2.0.1.aar
           test "$(stat -c%s app/libs/sherpa-onnx-2.0.1.aar)" -gt 10000000
+      - name: Validate bundled VRM and offline renderer assets
+        run: |
+          python3 - <<'PY'
+          import json, struct, zipfile
+          from pathlib import Path
+          model = Path("app/src/main/assets/yara_anime_girl.vrm").read_bytes()
+          assert len(model) >= 1_000_000, "VRM asset is unexpectedly small"
+          magic, version, declared_length = struct.unpack("<4sII", model[:12])
+          assert magic == b"glTF" and version == 2, "Avatar is not a GLB 2.0 container"
+          assert declared_length == len(model), "GLB declared length does not match file length"
+          chunk_length, chunk_type = struct.unpack("<II", model[12:20])
+          assert chunk_type == 0x4E4F534A, "First GLB chunk is not JSON"
+          document = json.loads(model[20:20 + chunk_length].decode("utf-8").rstrip(" \\t\\r\\n\\0"))
+          extensions = document.get("extensionsUsed", [])
+          assert "VRM" in extensions or "VRMC_vrm" in extensions, "GLB does not declare a VRM extension"
+          bundle = Path("app/src/main/assets/yara_avatar.bundle.js").read_bytes()
+          assert b"cdn.jsdelivr.net" not in bundle and b"unpkg.com" not in bundle, "Avatar bundle still references a CDN"
+          assert b"yara_anime_girl.vrm" in bundle, "Avatar bundle does not request the packaged model"
+          print("Valid GLB/VRM asset; renderer bundle has no CDN dependency.")
+          PY
       - name: Verify Gradle configuration
         run: gradle --no-daemon tasks --all
       - name: Run unit tests
