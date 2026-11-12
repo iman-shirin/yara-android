@@ -67,6 +67,23 @@ jobs:
         run: gradle --no-daemon tasks --all
       - name: Run unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Verify unit test report is non-empty and passing
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          files = glob.glob("app/build/test-results/testDebugUnitTest/TEST-*.xml")
+          assert files, "No unit test XML reports were generated"
+          tests = failures = errors = skipped = 0
+          for path in files:
+              root = ET.parse(path).getroot()
+              tests += int(root.attrib.get("tests", 0))
+              failures += int(root.attrib.get("failures", 0))
+              errors += int(root.attrib.get("errors", 0))
+              skipped += int(root.attrib.get("skipped", 0))
+          assert tests > 0, "Unit test task completed without executing tests"
+          assert failures == 0 and errors == 0, f"Unit test failures={failures}, errors={errors}"
+          print(f"Unit tests passed: {tests}; skipped: {skipped}; failures: {failures}; errors: {errors}")
+          PY
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Verify APK exists and calculate SHA-256
