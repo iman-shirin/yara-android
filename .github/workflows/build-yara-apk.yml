@@ -1,0 +1,98 @@
+name: Build Yara Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-yara-apk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yara-android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build installable Yara APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout Gimi source
+        uses: actions/checkout@v4
+        with:
+          repository: pony-huang/Gimi
+          ref: main
+          path: upstream
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools;platforms;android-37;build-tools;36.0.0
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply Yara branding and Persian app strings
+        working-directory: upstream
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path("app/src/main/res")
+          for rel, old, new in [
+              ("values/strings.xml", "<string name=\"app_name\">Gimi</string>", "<string name=\"app_name\">یارا</string>"),
+              ("values-en/strings.xml", "<string name=\"app_name\">Gimi</string>", "<string name=\"app_name\">Yara</string>"),
+          ]:
+              path = root / rel
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"Expected app_name entry not found in {path}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          fa = root / "values-fa"
+          fa.mkdir(parents=True, exist_ok=True)
+          (fa / "strings.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">یارا</string>
+              <string name="media_notification_listener_label">کنترل رسانه دستیار یارا</string>
+              <string name="background_app_channel">پنجره برنامه در پس‌زمینه</string>
+              <string name="background_app_notification">برنامه در پس‌زمینه در حال اجراست</string>
+              <string name="background_app_notification_detail">برای مشاهده یا بستن برنامه لمس کنید.</string>
+              <string name="background_app_notification_close">بستن برنامه پس‌زمینه</string>
+              <string name="plugin_incompatible_upgrade">افزونه «%1$s» با این نسخه از برنامه سازگار نیست و بارگذاری نشد. لطفاً افزونه را به‌روزرسانی کنید.</string>
+              <string name="plugins_incompatible_upgrade">تعداد %2$d افزونه (%1$s) با این برنامه سازگار نیستند. لطفاً آن‌ها را به‌روزرسانی کنید.</string>
+              <string name="plugin_name_separator">، </string>
+              <string name="voice_call_notification_permission">اعلان‌ها غیرفعال هستند؛ بنابراین هنگام رفتن برنامه به پس‌زمینه، تماس در نوار وضعیت نمایش داده نمی‌شود. از مسیر تنظیمات ← مجوزها، اعلان‌ها را فعال کنید.</string>
+          </resources>
+          """, encoding="utf-8")
+          PY
+
+      - name: Build debug APK
+        working-directory: upstream
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace --max-workers=2 --console=plain
+
+      - name: Verify APK outputs
+        working-directory: upstream
+        run: |
+          find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit | grep -q .
+          ls -lh app/build/outputs/apk/debug/*.apk
+
+      - name: Upload installable APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yara-Android-APK-${{ github.run_number }}
+          path: upstream/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
