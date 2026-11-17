@@ -79,9 +79,13 @@ try {
     }
   );
 
-  window.yaraSetState = (isSpeaking) => {
+  window.yaraSetState = (isSpeaking, hasConversation = false) => {
     speaking = Boolean(isSpeaking);
-    if (ready) hint.textContent = speaking ? "در حال صحبت…" : "یارا";
+    if (ready) {
+      hint.textContent = speaking
+        ? "در حال صحبت…"
+        : hasConversation ? "در کنار شما" : "یارا";
+    }
   };
 
   const clock = new THREE.Clock();
@@ -94,12 +98,12 @@ try {
       vrm.update(dt);
       const expressions = vrm.expressionManager;
       if (expressions) {
-        const blink = t % 4.25;
-        const blinkValue = blink > 4.02
-          ? Math.max(0, 1 - (blink - 4.02) / 0.12)
-          : blink > 4.14
-            ? Math.min(1, (blink - 4.14) / 0.11)
-            : 0;
+        const blinkPhase = (t % 4.2) - 4.0;
+        let blinkValue = 0;
+        if (blinkPhase >= 0 && blinkPhase < 0.16) {
+          const progress = blinkPhase / 0.16;
+          blinkValue = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+        }
         expressions.setValue("blink", blinkValue);
         mouthPhase += dt * 13;
         expressions.setValue("aa", speaking ? 0.12 + 0.35 * Math.abs(Math.sin(mouthPhase)) : 0.015);
