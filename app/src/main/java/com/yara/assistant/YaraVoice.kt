@@ -206,33 +206,34 @@ class YaraVoice(context: Context) {
             .build()
         activeTrack = track
         onSpeakingChanged?.invoke(true)
-        track.play()
-        var offset = 0
-        while (offset < samples.size && !released && activeTrack === track) {
-            val requested = minOf(2048, samples.size - offset)
-            val written = track.write(samples, offset, requested, AudioTrack.WRITE_BLOCKING)
-            if (written < 0) throw IllegalStateException("پخش صدای فارسی با خطای AudioTrack روبه‌رو شد: $written")
-            if (written == 0) {
-                Thread.yield()
-            } else {
-                var energy = 0.0
-                for (index in offset until offset + written) {
-                    val sample = samples[index].toDouble()
-                    energy += sample * sample
+        try {
+            track.play()
+            var offset = 0
+            while (offset < samples.size && !released && activeTrack === track) {
+                val requested = minOf(2048, samples.size - offset)
+                val written = track.write(samples, offset, requested, AudioTrack.WRITE_BLOCKING)
+                if (written < 0) throw IllegalStateException("پخش صدای فارسی با خطای AudioTrack روبه‌رو شد: $written")
+                if (written == 0) {
+                    Thread.yield()
+                } else {
+                    var energy = 0.0
+                    for (index in offset until offset + written) {
+                        val sample = samples[index].toDouble()
+                        energy += sample * sample
+                    }
+                    val rms = kotlin.math.sqrt(energy / written).toFloat()
+                    runCatching { onMouthLevel?.invoke((rms * 3.2f).coerceIn(0f, 1f)) }
+                    offset += written
                 }
-                val rms = kotlin.math.sqrt(energy / written).toFloat()
-                onMouthLevel?.invoke((rms * 3.2f).coerceIn(0f, 1f))
-                offset += written
             }
-        }
-        onMouthLevel?.invoke(0f)
-        if (activeTrack === track) {
+        } finally {
+            runCatching { onMouthLevel?.invoke(0f) }
+            if (activeTrack === track) activeTrack = null
             runCatching { track.stop() }
             runCatching { track.flush() }
+            runCatching { track.release() }
+            runCatching { onSpeakingChanged?.invoke(false) }
         }
-        runCatching { track.release() }
-        if (activeTrack === track) activeTrack = null
-        onSpeakingChanged?.invoke(false)
     }
 
     private fun stopPlayback() {
