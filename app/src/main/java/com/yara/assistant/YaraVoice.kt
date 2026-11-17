@@ -243,6 +243,11 @@ class YaraVoice(context: Context) {
         onSpeakingChanged?.invoke(false)
     }
 
+    /** Stops the currently playing Persian speech without cancelling microphone state. */
+    fun stopSpeaking() {
+        stopPlayback()
+    }
+
     fun stop() {
         stopListening()
         stopPlayback()
