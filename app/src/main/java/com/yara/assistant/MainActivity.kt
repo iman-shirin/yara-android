@@ -423,10 +423,17 @@ private fun QuickPrompts(onSelect: (String) -> Unit, modifier: Modifier = Modifi
         Text("از کجا شروع کنیم؟", color = Color(0xFFDDE3F4), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("امروز چه کارهایی دارم؟", "یک موضوع را بررسی کن", "برایم برنامه‌ریزی کن").forEach { prompt ->
+            listOf(
+                "حافظه بلندمدت" to "فهرست حافظه",
+                "کارهای من" to "کارها",
+                "یادآوری‌ها" to "یادآوری‌ها",
+                "جستجوی اینترنت" to "جستجو: ",
+                "بررسی موضوع" to "یک موضوع را بررسی کن",
+                "برنامه‌ریزی" to "برایم برنامه‌ریزی کن"
+            ).forEach { (label, command) ->
                 AssistChip(
-                    onClick = { onSelect(prompt) },
-                    label = { Text(prompt, maxLines = 1) },
+                    onClick = { onSelect(command) },
+                    label = { Text(label, maxLines = 1) },
                     colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFF17223A), labelColor = Color(0xFFD9DDF0)),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
                 )
