@@ -5,10 +5,12 @@ import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 const host = document.getElementById("stage");
 const hint = document.getElementById("hint");
 const errorBox = document.getElementById("error");
+const fallback = document.getElementById("fallback");
 
 function showError(message) {
-  errorBox.style.display = "flex";
+  errorBox.style.display = "block";
   errorBox.textContent = message;
+  if (fallback) fallback.style.display = "flex";
   hint.style.display = "none";
 }
 
@@ -85,6 +87,7 @@ try {
         camera.position.set(0, targetY, Math.max(1.05, height * 0.78));
         camera.lookAt(0, targetY, 0);
         ready = true;
+        if (fallback) fallback.style.display = "none";
         hint.textContent = "یارا";
       } catch (error) {
         console.error("Yara avatar initialization failed", error);
