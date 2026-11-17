@@ -18,6 +18,16 @@ let vrm = null;
 let mouthPhase = 0;
 let targetMouthLevel = 0;
 let smoothedMouthLevel = 0;
+let idleBones = null;
+
+function captureBonePose(node) {
+  return node ? { node, x: node.rotation.x, y: node.rotation.y, z: node.rotation.z } : null;
+}
+
+function applyBoneMotion(pose, x, y, z) {
+  if (!pose) return;
+  pose.node.rotation.set(pose.x + x, pose.y + y, pose.z + z);
+}
 
 try {
   if (!("WebGLRenderingContext" in window)) {
@@ -58,6 +68,13 @@ try {
         if (!vrm) throw new Error("VRM avatar metadata missing");
         VRMUtils.rotateVRM0(vrm);
         scene.add(vrm.scene);
+        const humanoid = vrm.humanoid;
+        idleBones = {
+          spine: captureBonePose(humanoid?.getNormalizedBoneNode("spine")),
+          chest: captureBonePose(humanoid?.getNormalizedBoneNode("chest")),
+          leftArm: captureBonePose(humanoid?.getNormalizedBoneNode("leftUpperArm")),
+          rightArm: captureBonePose(humanoid?.getNormalizedBoneNode("rightUpperArm"))
+        };
 
         const bounds = new THREE.Box3().setFromObject(vrm.scene);
         const height = bounds.max.y - bounds.min.y;
@@ -118,6 +135,13 @@ try {
         neck.rotation.z = Math.sin(t * 0.55) * 0.025;
         neck.rotation.y = Math.sin(t * 0.32) * 0.035;
       }
+      // Small additive idle motion, always relative to the model's authored rest pose.
+      const breath = Math.sin(t * 1.35);
+      const sway = Math.sin(t * 0.48);
+      applyBoneMotion(idleBones?.spine, 0, sway * 0.012, sway * 0.006);
+      applyBoneMotion(idleBones?.chest, breath * 0.008, 0, 0);
+      applyBoneMotion(idleBones?.leftArm, 0, 0, sway * 0.012);
+      applyBoneMotion(idleBones?.rightArm, 0, 0, -sway * 0.012);
     }
     renderer.render(scene, camera);
   }
