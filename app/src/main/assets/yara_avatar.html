@@ -4,16 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
+*{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
-#stage{position:absolute;inset:0}
-#hint{position:absolute;left:0;right:0;bottom:5%;text-align:center;color:#aab8d7;font:12px sans-serif;opacity:.9;pointer-events:none}
-#error{display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;color:#f5d9e8;font:14px sans-serif;padding:20px;direction:rtl}
+#stage{position:absolute;inset:0;z-index:2}
+#stage canvas{display:block;width:100%;height:100%}
+#fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:1;pointer-events:none}
+.avatar{width:min(68vw,210px);aspect-ratio:1;border-radius:48% 48% 45% 45%;position:relative;background:radial-gradient(circle at 50% 38%,#f5d8d8 0 29%,transparent 30%),linear-gradient(145deg,#32244e,#151d38 72%);border:2px solid #8e7bc4;box-shadow:0 12px 38px #05081799;overflow:hidden}
+.hair{position:absolute;left:8%;right:8%;top:5%;height:55%;border-radius:50% 50% 34% 34%;background:linear-gradient(120deg,#21182b,#49314a 55%,#171a2c);clip-path:polygon(0 0,100% 0,94% 70%,82% 100%,72% 62%,60% 88%,49% 56%,36% 91%,25% 62%,12% 100%,5% 68%)}
+.face{position:absolute;left:25%;right:25%;top:24%;height:52%;border-radius:46% 46% 48% 48%;background:linear-gradient(135deg,#ffe4df,#dcaeb8);box-shadow:inset 0 -7px 12px #a56e8170}
+.eye{position:absolute;top:43%;width:9%;height:10%;border-radius:50%;background:#6653a5;box-shadow:0 0 0 3px #fff8}
+.eye.l{left:38%}.eye.r{right:38%}
+.mouth{position:absolute;left:47%;top:61%;width:7%;height:3%;border-radius:50%;background:#9e536b}
+.clip{position:absolute;right:19%;top:19%;width:23px;height:8px;border-radius:8px;background:#79d9d0;transform:rotate(-25deg)}
+#hint{position:absolute;left:0;right:0;bottom:3%;z-index:3;text-align:center;color:#aab8d7;font:12px sans-serif;opacity:.9;pointer-events:none}
+#error{display:none;position:absolute;left:4%;right:4%;bottom:16%;z-index:4;text-align:center;color:#ffd6df;background:#171d32dd;border:1px solid #76506c;border-radius:12px;padding:8px;direction:rtl;font:12px sans-serif}
 </style>
 </head>
 <body>
-<div id="stage"></div>
-<div id="hint">در حال آماده‌سازی یارا…</div>
-<div id="error"></div>
+<div id="fallback" aria-label="تصویر جایگزین یارا"><div class="avatar"><div class="hair"></div><div class="face"></div><div class="eye l"></div><div class="eye r"></div><div class="mouth"></div><div class="clip"></div></div></div>
+<div id="stage"></div><div id="hint">یارا</div><div id="error"></div>
 <script type="module" src="./yara_avatar.bundle.js"></script>
 </body>
 </html>
