@@ -387,6 +387,11 @@ class MainActivity : ComponentActivity() {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("پاسخ صوتی", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.labelMedium)
                                 Switch(checked = voiceOutput, onCheckedChange = { voiceOutput = it })
+                                if (speaking) {
+                                    TextButton(onClick = { voice.stopSpeaking() }) {
+                                        Text("توقف صدا", color = Color(0xFFFF9C9C))
+                                    }
+                                }
                             }
                         }
                     }
