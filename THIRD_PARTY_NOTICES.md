@@ -1,4 +1,4 @@
-Yara Android 0.3.6 — Third-party asset and model notices
+Yara Android 0.3.7 — Third-party asset and model notices
 
 1) Anime avatar
 - File: app/src/main/assets/yara_anime_girl.vrm (downloaded by CI at build time)
@@ -23,3 +23,8 @@ Yara Android 0.3.6 — Third-party asset and model notices
 - esbuild 0.24.2 (build-time bundler; not shipped as a runtime): MIT — https://github.com/evanw/esbuild
 
 The JavaScript viewer bundle is generated from pinned dependency versions by the Android CI workflow. No CDN request is required by the avatar renderer at runtime.
+
+
+4) Web search HTML parser
+- Jsoup 1.18.3: MIT License — https://jsoup.org/license
+- Used to parse DuckDuckGo HTML result titles, snippets, and source links.

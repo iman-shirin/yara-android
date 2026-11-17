@@ -16,17 +16,17 @@ class YaraProvider(private val prefs: YaraPreferences) {
     private val client = OkHttpClient.Builder()
         .callTimeout(90, TimeUnit.SECONDS).connectTimeout(20, TimeUnit.SECONDS).build()
 
-    suspend fun reply(history: List<ChatLine>, message: String, memories: List<String> = emptyList()): String = withContext(Dispatchers.IO) {
+    suspend fun reply(history: List<ChatLine>, message: String, memories: List<String> = emptyList(), webContext: String = ""): String = withContext(Dispatchers.IO) {
         val primary = prefs.primaryProvider
         require(primary.apiKey.isNotBlank()) { "ابتدا کلید API سرویس ${primary.name} را در تنظیمات وارد کن." }
         try {
-            return@withContext request(primary, history, message, memories)
+            return@withContext request(primary, history, message, memories, webContext)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             val secondary = prefs.fallbackProvider
             if (!prefs.fallbackEnabled || secondary.apiKey.isBlank() || !isRetryable(error)) throw error
             try {
-                return@withContext request(secondary, history, message, memories)
+                return@withContext request(secondary, history, message, memories, webContext)
             } catch (fallbackError: Exception) {
                 if (fallbackError is CancellationException) throw fallbackError
                 throw IOException("اتصال سرویس اصلی و جایگزین ناموفق بود. ${primary.name}: ${error.message}; ${secondary.name}: ${fallbackError.message}", fallbackError)
@@ -38,7 +38,7 @@ class YaraProvider(private val prefs: YaraPreferences) {
         error is IOException || error.message?.contains("HTTP 408") == true ||
             error.message?.contains("HTTP 429") == true || error.message?.contains("HTTP 5") == true
 
-    private fun request(provider: ProviderConfig, history: List<ChatLine>, message: String, memories: List<String>): String {
+    private fun request(provider: ProviderConfig, history: List<ChatLine>, message: String, memories: List<String>, webContext: String): String {
         require(provider.apiKey.isNotBlank()) { "کلید API سرویس ${provider.name} وارد نشده است." }
         val memoryContext = memories.take(8).joinToString("\n")
         val systemPrompt = buildString {
@@ -46,6 +46,10 @@ class YaraProvider(private val prefs: YaraPreferences) {
             if (memoryContext.isNotBlank()) {
                 append("\n\nاطلاعات حافظه بلندمدت کاربر که برای درخواست فعلی مرتبط تشخیص داده شده‌اند؛ فقط در صورت ارتباط استفاده کن و آن‌ها را به‌عنوان حقیقت قطعی درباره موضوعات متغیر تلقی نکن:\n")
                 append(memoryContext)
+            }
+            if (webContext.isNotBlank()) {
+                append("\n\nزمینه جستجوی اینترنتی برای همین درخواست:\n")
+                append(webContext)
             }
         }
         val messages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
