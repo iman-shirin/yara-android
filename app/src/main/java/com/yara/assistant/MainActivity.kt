@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
                     val voice = remember { YaraVoice(context) }
                     var listening by remember { mutableStateOf(false) }
                     var speaking by remember { mutableStateOf(false) }
+                    var mouthLevel by remember { mutableStateOf(0f) }
                     var voiceError by remember { mutableStateOf<String?>(null) }
                     var voiceStatus by remember { mutableStateOf("") }
                     var voiceOutput by remember { mutableStateOf(true) }
@@ -127,11 +128,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     DisposableEffect(voice) {
-                        voice.onResult = { recognized -> input = recognized; voiceError = null }
-                        voice.onError = { message -> voiceError = message }
-                        voice.onStatus = { message -> voiceStatus = message }
-                        voice.onListeningChanged = { listening = it }
-                        voice.onSpeakingChanged = { speaking = it }
+                        voice.onResult = { recognized -> runOnUiThread { input = recognized; voiceError = null } }
+                        voice.onError = { message -> runOnUiThread { voiceError = message } }
+                        voice.onStatus = { message -> runOnUiThread { voiceStatus = message } }
+                        voice.onListeningChanged = { value -> runOnUiThread { listening = value } }
+                        voice.onSpeakingChanged = { value -> runOnUiThread { speaking = value } }
+                        voice.onMouthLevel = { level -> runOnUiThread { mouthLevel = level } }
                         onDispose { voice.release() }
                     }
                     var showSettings by remember { mutableStateOf(false) }
@@ -184,7 +186,7 @@ class MainActivity : ComponentActivity() {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    YaraAvatar(isSpeaking = speaking, hasConversation = showConversation, modifier = Modifier.size(238.dp))
+                                    YaraAvatar(isSpeaking = speaking, mouthLevel = mouthLevel, hasConversation = showConversation, modifier = Modifier.size(238.dp))
                                     Spacer(Modifier.height(12.dp))
                                     Text(
                                         when { busy -> "در حال فکر کردن…" ; showConversation -> "من اینجا هستم" ; else -> "سلام، من یارا هستم" },
@@ -415,7 +417,7 @@ private fun QuickPrompts(onSelect: (String) -> Unit, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun YaraAvatar(isSpeaking: Boolean, hasConversation: Boolean, modifier: Modifier = Modifier) {
+private fun YaraAvatar(isSpeaking: Boolean, mouthLevel: Float, hasConversation: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     DisposableEffect(Unit) {
@@ -448,7 +450,7 @@ private fun YaraAvatar(isSpeaking: Boolean, hasConversation: Boolean, modifier: 
         },
         update = { view ->
             view.evaluateJavascript(
-                "window.yaraSetState && window.yaraSetState($isSpeaking, $hasConversation)",
+                "window.yaraSetState && window.yaraSetState($isSpeaking, $hasConversation, ${mouthLevel.coerceIn(0f, 1f)})",
                 null
             )
         }

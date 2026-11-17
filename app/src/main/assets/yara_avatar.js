@@ -16,6 +16,8 @@ let speaking = false;
 let ready = false;
 let vrm = null;
 let mouthPhase = 0;
+let targetMouthLevel = 0;
+let smoothedMouthLevel = 0;
 
 try {
   if (!("WebGLRenderingContext" in window)) {
@@ -79,8 +81,10 @@ try {
     }
   );
 
-  window.yaraSetState = (isSpeaking, hasConversation = false) => {
+  window.yaraSetState = (isSpeaking, hasConversation = false, level = 0) => {
     speaking = Boolean(isSpeaking);
+    targetMouthLevel = Math.max(0, Math.min(1, Number(level) || 0));
+    if (!speaking) targetMouthLevel = 0;
     if (ready) {
       hint.textContent = speaking
         ? "در حال صحبت…"
@@ -105,9 +109,9 @@ try {
           blinkValue = progress < 0.5 ? progress * 2 : (1 - progress) * 2;
         }
         expressions.setValue("blink", blinkValue);
-        mouthPhase += dt * 13;
-        expressions.setValue("aa", speaking ? 0.12 + 0.35 * Math.abs(Math.sin(mouthPhase)) : 0.015);
-        expressions.setValue("ih", speaking ? 0.08 + 0.15 * Math.abs(Math.sin(mouthPhase * 0.7)) : 0);
+        smoothedMouthLevel += (targetMouthLevel - smoothedMouthLevel) * Math.min(1, dt * 18);
+        expressions.setValue("aa", speaking ? 0.025 + 0.78 * smoothedMouthLevel : 0.015);
+        expressions.setValue("ih", speaking ? 0.035 + 0.24 * smoothedMouthLevel : 0);
       }
       const neck = vrm.humanoid?.getNormalizedBoneNode("neck");
       if (neck) {
