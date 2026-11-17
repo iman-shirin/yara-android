@@ -128,11 +128,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     DisposableEffect(voice) {
-                        voice.onResult = { recognized -> input = recognized; voiceError = null }
-                        voice.onError = { message -> voiceError = message }
-                        voice.onStatus = { message -> voiceStatus = message }
-                        voice.onListeningChanged = { listening = it }
-                        voice.onSpeakingChanged = { speaking = it }
+                        voice.onResult = { recognized -> runOnUiThread { input = recognized; voiceError = null } }
+                        voice.onError = { message -> runOnUiThread { voiceError = message } }
+                        voice.onStatus = { message -> runOnUiThread { voiceStatus = message } }
+                        voice.onListeningChanged = { value -> runOnUiThread { listening = value } }
+                        voice.onSpeakingChanged = { value -> runOnUiThread { speaking = value } }
                         voice.onMouthLevel = { level -> runOnUiThread { mouthLevel = level } }
                         onDispose { voice.release() }
                     }
