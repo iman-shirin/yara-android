@@ -137,6 +137,7 @@ class MainActivity : ComponentActivity() {
                         onDispose { voice.release() }
                     }
                     var showSettings by remember { mutableStateOf(false) }
+                    var showPlugins by remember { mutableStateOf(false) }
                     var showConversation by remember { mutableStateOf(saved.isNotEmpty()) }
                     val listState = rememberLazyListState()
 
@@ -165,13 +166,23 @@ class MainActivity : ComponentActivity() {
                                         Text("دستیار هوش مصنوعی", style = MaterialTheme.typography.labelSmall, color = Color(0xFF9BA8C7))
                                     }
                                 }
-                                Surface(
-                                    onClick = { showSettings = true },
-                                    shape = RoundedCornerShape(13.dp),
-                                    color = Color(0xFF1A2440),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
-                                ) {
-                                    Text("⚙  تنظیمات", Modifier.padding(horizontal = 13.dp, vertical = 10.dp), color = Color(0xFFDAE2F5), style = MaterialTheme.typography.labelLarge)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Surface(
+                                        onClick = { showPlugins = true },
+                                        shape = RoundedCornerShape(13.dp),
+                                        color = Color(0xFF1A2440),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
+                                    ) {
+                                        Text("🧩 افزونه‌ها", Modifier.padding(horizontal = 11.dp, vertical = 10.dp), color = Color(0xFFDAE2F5), style = MaterialTheme.typography.labelLarge)
+                                    }
+                                    Surface(
+                                        onClick = { showSettings = true },
+                                        shape = RoundedCornerShape(13.dp),
+                                        color = Color(0xFF1A2440),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
+                                    ) {
+                                        Text("⚙  تنظیمات", Modifier.padding(horizontal = 11.dp, vertical = 10.dp), color = Color(0xFFDAE2F5), style = MaterialTheme.typography.labelLarge)
+                                    }
                                 }
                             }
                         }
@@ -396,6 +407,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (showSettings) SettingsDialog(prefs) { showSettings = false }
+                    if (showPlugins) YaraPluginsDialog(YaraPluginManager(context)) { showPlugins = false }
                 }
             }
         }
@@ -541,5 +553,76 @@ private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
             }) { Text("ذخیره") }
         },
         dismissButton = { TextButton(onClick = close) { Text("انصراف") } }
+    )
+}
+
+
+@Composable
+private fun YaraPluginsDialog(manager: YaraPluginManager, close: () -> Unit) {
+    var revision by remember { mutableIntStateOf(0) }
+    val catalog = remember { manager.catalog() }
+    AlertDialog(
+        onDismissRequest = close,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("مدیریت افزونه‌های یارا")
+                Text(
+                    "${manager.enabledPlugins().size} افزونه فعال از ${catalog.size} قابلیت فهرست‌شده",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+        },
+        text = {
+            Column(
+                Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "دسترسی گسترده به معنی امکان اتصال سرویس‌هاست؛ هر اتصال همچنان به پیاده‌سازی، مجوز و احراز هویت خودش نیاز دارد.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                YaraPluginCategory.entries.forEach { category ->
+                    val plugins = catalog.filter { it.category == category }
+                    if (plugins.isNotEmpty()) {
+                        Text(category.title, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                        plugins.forEach { plugin ->
+                            val enabled = manager.isEnabled(plugin.id)
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(plugin.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(plugin.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        when (plugin.status) {
+                                            YaraPluginStatus.READY -> if (enabled) "پیاده‌سازی‌شده · فعال" else "پیاده‌سازی‌شده · غیرفعال"
+                                            YaraPluginStatus.PLANNED -> "در نقشه راه · هنوز پیاده‌سازی نشده"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (plugin.status == YaraPluginStatus.READY) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                                if (plugin.status == YaraPluginStatus.READY) {
+                                    Switch(
+                                        checked = enabled,
+                                        onCheckedChange = { value ->
+                                            manager.setEnabled(plugin.id, value)
+                                            revision++
+                                        }
+                                    )
+                                } else {
+                                    Text("به‌زودی", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            if (plugin != plugins.last()) HorizontalDivider()
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = close) { Text("بستن") } }
     )
 }
