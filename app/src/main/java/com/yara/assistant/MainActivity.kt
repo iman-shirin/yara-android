@@ -561,13 +561,14 @@ private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
 private fun YaraPluginsDialog(manager: YaraPluginManager, close: () -> Unit) {
     var revision by remember { mutableIntStateOf(0) }
     val catalog = remember { manager.catalog() }
+    val enabledCount = remember(revision) { manager.enabledPlugins().size }
     AlertDialog(
         onDismissRequest = close,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("مدیریت افزونه‌های یارا")
                 Text(
-                    "${manager.enabledPlugins().size} افزونه فعال از ${catalog.size} قابلیت فهرست‌شده",
+                    "$enabledCount افزونه فعال از ${catalog.size} قابلیت فهرست‌شده",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
