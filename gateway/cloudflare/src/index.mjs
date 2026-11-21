@@ -1,6 +1,6 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { assertAgentBranch, assertWritablePath, hashToken, issueAgentToken, safeEqual, validAgentId, validRepoPart, validRepoPath, parseBearer, decodeBase64, base64Url } from './security.mjs';
+import { assertAgentBranch, assertWritablePath, hashToken, issueAgentToken, safeEqual, validAgentId, validRepoPart, validRepoPath, parseBearer, decodeBase64, encodeBase64, base64Url } from './security.mjs';
 import { validateTaskPayload, validateMessagePayload, byteLength } from './collaboration.mjs';
 
 const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store', ...headers } });
@@ -23,7 +23,7 @@ async function authenticate(request, env) {
   return getRow(env.DB.prepare('SELECT id,display_name FROM yara_agents WHERE token_hash=? AND active=1').bind(tokenHash));
 }
 
-let cachedInstallationToken = null;
+function derLength(length) { if (length < 128) return Uint8Array.of(length); const bytes=[]; let n=length; while(n>0){bytes.unshift(n&255);n>>=8;} return Uint8Array.of(0x80|bytes.length,...bytes); }\nfunction der(tag, value) { const len=derLength(value.length); const out=new Uint8Array(1+len.length+value.length); out[0]=tag; out.set(len,1); out.set(value,1+len.length); return out; }\nfunction concatBytes(...arrays) { const out=new Uint8Array(arrays.reduce((n,a)=>n+a.length,0)); let offset=0; for(const a of arrays){out.set(a,offset);offset+=a.length;} return out; }\nfunction rsaPkcs1ToPkcs8(pkcs1) { const version=Uint8Array.of(0x02,0x01,0x00); const algorithm=Uint8Array.of(0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01,0x05,0x00); return der(0x30,concatBytes(version,algorithm,der(0x04,pkcs1))); }\n\nlet cachedInstallationToken = null;
 let cachedInstallationTokenExpiresAt = 0;
 async function githubToken(env) {
   const keys = ['GITHUB_APP_ID','GITHUB_INSTALLATION_ID','GITHUB_APP_PRIVATE_KEY_BASE64'];
@@ -157,7 +157,7 @@ async function callTool(env, agent, name, args, requestId) {
   if (name==='yara_write_file') {
     validateRepo(env,owner,repo,args.path); assertAgentBranch(agent.id,args.branch); assertWritablePath(args.path);
     if (typeof args.content!=='string'||byteLength(args.content)>500000||typeof args.message!=='string'||!args.message.trim()||args.message.length>200) throw new Error('invalid_write_payload');
-    const payload={message:args.message,content:btoa(unescape(encodeURIComponent(args.content))),branch:args.branch};
+    const payload={message:args.message,content:encodeBase64(new TextEncoder().encode(args.content)),branch:args.branch};
     if (typeof args.sha==='string'&&/^[a-f0-9]{40}$/.test(args.sha)) payload.sha=args.sha;
     const data=await githubRequest(env,'/repos/'+owner+'/'+repo+'/contents/'+args.path.split('/').map(encodeURIComponent).join('/'),{method:'PUT',body:JSON.stringify(payload)});
     await audit(env,agent.id,'mcp.file.write',owner+'/'+repo+'/'+args.path,'success',requestId,{branch:args.branch,commitSha:data.commit?.sha}); return {branch:args.branch,commitSha:data.commit?.sha,contentSha:data.content?.sha};
@@ -246,7 +246,7 @@ async function handleApi(request, env, ctx) {
     const owner=decodeURIComponent(fileMatch[1]),repo=decodeURIComponent(fileMatch[2]),body=await parseJson(request); validateRepo(env,owner,repo,body.path);
     try { assertAgentBranch(agent.id,body.branch); assertWritablePath(body.path); } catch(e) { await audit(env,agent.id,'project.file.write',owner+'/'+repo+'/'+body.path,'denied',requestId,{reason:e.message}); return err(e.message,403); }
     if (typeof body.content!=='string'||byteLength(body.content)>500000||typeof body.message!=='string'||!body.message.trim()||body.message.length>200) return err('invalid_write_payload',400);
-    const payload={message:body.message,content:btoa(unescape(encodeURIComponent(body.content))),branch:body.branch}; if (typeof body.sha==='string'&&/^[a-f0-9]{40}$/.test(body.sha)) payload.sha=body.sha;
+    const payload={message:body.message,content:encodeBase64(new TextEncoder().encode(body.content)),branch:body.branch}; if (typeof body.sha==='string'&&/^[a-f0-9]{40}$/.test(body.sha)) payload.sha=body.sha;
     const data=await githubRequest(env,'/repos/'+owner+'/'+repo+'/contents/'+body.path.split('/').map(encodeURIComponent).join('/'),{method:'PUT',body:JSON.stringify(payload)});
     await audit(env,agent.id,'project.file.write',owner+'/'+repo+'/'+body.path,'success',requestId,{branch:body.branch,commitSha:data.commit?.sha,contentSha:data.content?.sha}); return json({path:body.path,branch:body.branch,commitSha:data.commit?.sha,contentSha:data.content?.sha},201);
   }
