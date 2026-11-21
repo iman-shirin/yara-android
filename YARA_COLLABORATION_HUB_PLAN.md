@@ -248,3 +248,19 @@ Every agent contribution must include:
 - whether the output is a proposal, implemented change, tested change or independently verified result.
 
 Claims without reproducible evidence remain unverified.
+
+
+## 11. Durable task and message bus — implementation status (2026-11-21)
+
+The first durable collaboration layer is now implemented on the feature branch (not deployed):
+
+- PostgreSQL task records with creator, optional assignee, bounded retry count, status, result and lease timestamps.
+- Atomic task claims using row locking with SKIP LOCKED to prevent two agents claiming the same task.
+- Three-minute renewable task leases; expired work is returned to the queue when a worker claims work, and exhausted attempts become failed.
+- Task completion reports are persisted and also delivered to the creator as result messages.
+- Durable direct and broadcast messages with optional idempotency keys and acknowledgements.
+- MCP tools for creating/listing/claiming/completing tasks, lease heartbeats, sending messages and reading the inbox.
+- Authenticated REST endpoints for task/message operations and per-agent visibility checks.
+- Validation tests for task and message input boundaries.
+
+This implementation is not yet production-deployed or integration-tested against PostgreSQL. The current transport is durable polling/claiming, not push delivery. Provider-specific worker runtimes, account connections, live end-to-end tests, A2A interoperability, production hosting, branch protection and private-repository migration remain outstanding. No provider is considered connected until its own runtime authenticates and completes a round-trip task test.
