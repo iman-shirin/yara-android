@@ -164,7 +164,7 @@ Hosting vendor, data region, budget, identity provider and retention policy rema
 - [x] Add an initial Codespaces/devcontainer configuration for the Android toolchain (execution in a real Codespace remains unverified).
 - [ ] Document local setup, environment variables and secret handling.
 - [x] Add shared agent contribution instructions; PR/issue templates remain pending.
-- [ ] Validate the existing Android workflow on the exact candidate commit.
+- [x] Validate the Android workflow on PR head `c483d3815905edd53c1f77eed30442cd33dccf22` (run #111): 18 unit tests passed, debug APK built and uploaded.
 - [ ] Configure and test Main protection after owner review.
 
 ### Stage 3 — Collaboration service foundation
@@ -172,7 +172,7 @@ Hosting vendor, data region, budget, identity provider and retention policy rema
 - [ ] Implement durable mission/task/message persistence.
 - [~] Implement initial branch-scope policy checks and append-only audit trigger; mission approvals and full policy engine remain pending.
 - [~] Implement GitHub App JWT/token exchange and repository-allowlisted branch/file/draft-PR operations; live App installation and private-repository verification remain pending.
-- [~] Add initial unit tests for token generation, comparisons, path validation and branch isolation; integration, concurrency, replay and recovery tests remain pending.
+- [x] Add and run six Gateway unit tests for token generation, comparisons, agent identity validation, path traversal, branch isolation and protected paths (Gateway run #18 succeeded on `c483d3815905edd53c1f77eed30442cd33dccf22`). Integration, concurrency, replay and recovery tests remain pending.
 
 ### Stage 4 — Agent integrations
 - [ ] Integrate one reviewer agent first, then one implementation agent.
@@ -227,7 +227,7 @@ The following code has been committed to the execution branch, not to `main`:
 - `.github/workflows/android.yml`: Gateway syntax and unit-test job added to the existing PR workflow.
 - `.github/workflows/gateway.yml`: standalone Gateway workflow for after this workflow is present on the default branch.
 
-**Not yet verified:** Gateway test execution on GitHub Actions, PostgreSQL integration, real GitHub App authentication, Codespaces execution, production deployment, provider connections, repository-private transition and enforced branch protection. The current environment cannot execute the repository checkout locally, so code is not described as tested until CI reports a result for the exact PR head SHA.
+**Verified on PR head `c483d3815905edd53c1f77eed30442cd33dccf22` (2026-11-21):** Gateway workflow run #18 passed dependency installation, JavaScript syntax checks and all 6 security unit tests. Android workflow run #111 passed all 18 Android unit tests and built the debug APK; SHA-256 `52a2b05e0c5db76367e771ef971cbff4ac2046c8b4d679d1adf554ffafac66cc`.\n\n**Not yet verified:** PostgreSQL integration, real GitHub App authentication, Codespaces execution, production deployment, provider connections, repository-private transition and enforced branch protection. The Gateway and Android checks above are CI evidence for the exact PR head SHA listed. No live service or provider integration is implied by those tests.
 
 ## 12. Status reporting format
 
