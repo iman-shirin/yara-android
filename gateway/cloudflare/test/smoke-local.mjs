@@ -18,7 +18,7 @@ async function waitForWorker(){
   throw new Error('Worker did not become ready: '+output);
 }
 async function request(path,method='GET',token=null,body=undefined){
-  const response=await fetch(base+path,{signal:AbortSignal.timeout(10000),method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
+  const response=await fetch(base+path,{signal:AbortSignal.timeout(3000),method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
   const text=await response.text(); let data=null; try{data=text?JSON.parse(text):null;}catch{}
   return {status:response.status,data};
 }
