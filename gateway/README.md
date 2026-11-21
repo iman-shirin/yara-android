@@ -15,7 +15,7 @@ This is an initial, self-hostable collaboration gateway. It is **not production-
 
 ## API and MCP
 
-The stateless MCP endpoint is `POST /mcp`. It supports JSON-RPC initialization, tool discovery and tool calls using the authenticated agent bearer token. Available tools: `yara_identity`, `yara_read_file`, `yara_create_branch`, `yara_write_file` and `yara_create_draft_pr`. It exposes no merge or main-branch write operation. Use the HTTPS URL `https://<gateway-host>/mcp` after deployment; do not configure a provider against an unencrypted endpoint.
+The `/mcp` endpoint uses the official MCP TypeScript SDK v2. It serves the modern 2026-07-28 protocol (server/discover and per-request envelopes) and the legacy 2025-era initialize handshake through one tool registry. It uses Streamable HTTP and the authenticated agent bearer token. Available tools: `yara_identity`, `yara_read_file`, `yara_create_branch`, `yara_write_file` and `yara_create_draft_pr`. It exposes no merge or main-branch write operation. Use the HTTPS URL `https://<gateway-host>/mcp` after deployment; do not configure a provider against an unencrypted endpoint.
 
 All agent REST and MCP endpoints require `Authorization: Bearer <agent-token>`.
 
@@ -67,7 +67,7 @@ Run the post-deployment read-only smoke test after provisioning an agent token:
 MCP_URL=https://<gateway-domain>/mcp YARA_AGENT_TOKEN=<secret> bash scripts/smoke-mcp.sh
 ```
 
-The script verifies HTTPS, MCP initialization, tool discovery, authenticated identity and unauthenticated denial. It does not create branches or write repository files.
+The script uses the official SDK v2 client to negotiate both modern and legacy protocol eras, verifies tool discovery and authenticated identity, and confirms unauthenticated requests are denied. It does not create branches or write repository files.
 
 ## Deployment requirements — not yet completed
 
