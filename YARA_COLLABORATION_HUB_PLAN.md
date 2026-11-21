@@ -226,7 +226,6 @@ The following code has been committed to the execution branch, not to `main`:
 - `gateway/src/security.mjs` and `gateway/test/security.test.mjs`: credential hashing/generation, constant-time comparison, input/path validation and agent branch isolation tests.
 - `gateway/Dockerfile`, `gateway/package.json`, `gateway/.env.example`, `gateway/README.md`: container and local deployment scaffolding.
 - `.github/workflows/android.yml`: Gateway syntax and unit-test job added to the existing PR workflow.
-- `.github/workflows/gateway.yml`: standalone Gateway workflow for after this workflow is present on the default branch.
 - `.railway/railway.ts`: Railway Infrastructure as Code declaration for a PostgreSQL database and Gateway service; it has not been applied to an account.
 - `gateway/GITHUB_APP_SETUP.md`: exact minimal GitHub App permission and secret-injection checklist.
 - `docs/collaboration/PROVIDER_CONNECTIONS.md`: provider-specific MCP connection steps and actual plan/surface limitations.
