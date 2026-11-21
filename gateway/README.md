@@ -16,7 +16,7 @@ This is an initial, self-hostable collaboration gateway. It is **not production-
 
 ## API and MCP
 
-The `/mcp` endpoint uses the official MCP TypeScript SDK v2. It serves the modern 2026-07-28 protocol (server/discover and per-request envelopes) and the legacy 2025-era initialize handshake through one tool registry. It uses Streamable HTTP and the authenticated agent bearer token. Available tools: `yara_identity`, `yara_read_file`, `yara_create_branch`, `yara_write_file`, `yara_create_draft_pr`, `yara_task_create`, `yara_tasks_list`, `yara_task_claim`, `yara_task_heartbeat`, `yara_task_complete`, `yara_message_send` and `yara_message_inbox`. It exposes no merge or main-branch write operation. Use the HTTPS URL `https://<gateway-host>/mcp` after deployment; do not configure a provider against an unencrypted endpoint.
+The `/mcp` endpoint uses the official MCP TypeScript SDK v2. It serves the modern 2026-07-28 protocol (server/discover and per-request envelopes) and the legacy 2025-era initialize handshake through one tool registry. It uses Streamable HTTP and the authenticated agent bearer token. Available tools: `yara_identity`, `yara_read_file`, `yara_create_branch`, `yara_write_file`, `yara_create_draft_pr`, `yara_task_create`, `yara_tasks_list`, `yara_task_claim`, `yara_task_heartbeat`, `yara_task_complete`, `yara_message_send`, `yara_message_inbox` and `yara_message_ack`. It exposes no merge or main-branch write operation. Use the HTTPS URL `https://<gateway-host>/mcp` after deployment; do not configure a provider against an unencrypted endpoint.
 
 All agent REST and MCP endpoints require `Authorization: Bearer <agent-token>`.
 
