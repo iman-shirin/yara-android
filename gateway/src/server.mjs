@@ -1,5 +1,8 @@
-import Fastify from "fastify";
 import pg from "pg";
+import { createMcpFastifyApp } from "@modelcontextprotocol/fastify";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import * as z from "zod/v4";
 import { createPrivateKey, sign } from "node:crypto";
 import { assertAgentBranch, assertWritablePath, hashToken, issueAgentToken, safeEqual, validAgentId, validRepoPart, validRepoPath } from "./security.mjs";
 
@@ -18,11 +21,14 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000
 });
-const app = Fastify({
-  logger: { level: env.LOG_LEVEL ?? "info", redact: ["req.headers.authorization", "res.headers.set-cookie"] },
-  bodyLimit: 1024 * 1024,
-  requestTimeout: 15000
-});
+const configuredHosts = (env.GATEWAY_ALLOWED_HOSTS ?? "")
+  .split(",").map((host) => host.trim().toLowerCase()).filter(Boolean);
+if (env.NODE_ENV === "production" && configuredHosts.length === 0) {
+  throw new Error("GATEWAY_ALLOWED_HOSTS must include the public Gateway hostname in production");
+}
+const allowedHosts = [...new Set(["localhost", "127.0.0.1", ...configuredHosts])];
+const app = createMcpFastifyApp({ host: env.HOST ?? "0.0.0.0", allowedHosts });
+app.server.requestTimeout = 15000;
 
 const privateKey = createPrivateKey(Buffer.from(env.GITHUB_APP_PRIVATE_KEY_BASE64, "base64").toString("utf8"));
 let installationToken = null;
@@ -147,26 +153,14 @@ function validateRepo(owner, repo, path) {
   }
 }
 
-function rpcError(id, code, message) {
-  return { jsonrpc: "2.0", id: id ?? null, error: { code, message } };
-}
-
-function mcpText(id, value, isError = false) {
-  return {
-    jsonrpc: "2.0",
-    id,
-    result: { content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], isError }
-  };
-}
-
 async function callMcpTool(agent, name, args, requestId) {
-  const { owner, repo } = args;
-  if (!validRepoPart(owner) || !validRepoPart(repo) || `${owner}/${repo}` !== env.GITHUB_REPOSITORY) {
-    throw new Error("repository_not_allowed");
-  }
   if (name === "yara_identity") {
     await audit(agent.id, "mcp.identity", agent.id, "success", requestId);
     return { id: agent.id, displayName: agent.display_name, status: "active" };
+  }
+  const { owner, repo } = args;
+  if (!validRepoPart(owner) || !validRepoPart(repo) || `${owner}/${repo}` !== env.GITHUB_REPOSITORY) {
+    throw new Error("repository_not_allowed");
   }
   if (name === "yara_read_file") {
     validateRepo(owner, repo, args.path);
@@ -216,50 +210,92 @@ async function callMcpTool(agent, name, args, requestId) {
   throw new Error("unknown_tool");
 }
 
-const mcpTools = [
-  { name: "yara_identity", description: "Return the authenticated YARA agent identity.", annotations: { readOnlyHint: true }, inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "yara_read_file", description: "Read a file from the configured YARA repository.", annotations: { readOnlyHint: true }, inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string" } }, required: ["owner", "repo", "path"], additionalProperties: false } },
-  { name: "yara_create_branch", description: "Create a branch under the authenticated agent namespace, based on main.", annotations: { readOnlyHint: false }, inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, name: { type: "string" } }, required: ["owner", "repo", "name"], additionalProperties: false } },
-  { name: "yara_write_file", description: "Create or update a file only on the authenticated agent's own branch.", annotations: { readOnlyHint: false }, inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string" }, branch: { type: "string" }, content: { type: "string" }, message: { type: "string" }, sha: { type: "string" } }, required: ["owner", "repo", "path", "branch", "content", "message"], additionalProperties: false } },
-  { name: "yara_create_draft_pr", description: "Create a draft pull request from the authenticated agent's branch to main. Does not merge.", annotations: { readOnlyHint: false }, inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, head: { type: "string" }, title: { type: "string" }, body: { type: "string" } }, required: ["owner", "repo", "head", "title"], additionalProperties: false } }
-];
 
-app.post("/mcp", { preHandler: authenticate }, async (request, reply) => {
-  const rpc = request.body;
-  if (!rpc || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
-    return reply.code(400).send(rpcError(rpc?.id, -32600, "Invalid JSON-RPC request"));
-  }
-  if (rpc.method === "notifications/initialized" || rpc.method.startsWith("notifications/")) {
-    return reply.code(202).send();
-  }
-  if (rpc.method === "initialize") {
-    return reply.send({
-      jsonrpc: "2.0", id: rpc.id,
-      result: {
-        protocolVersion: "2025-03-26",
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "yara-universal-gateway", version: "0.1.0" }
-      }
-    });
-  }
-  if (rpc.method === "ping") return reply.send({ jsonrpc: "2.0", id: rpc.id, result: {} });
-  if (rpc.method === "tools/list") return reply.send({ jsonrpc: "2.0", id: rpc.id, result: { tools: mcpTools } });
-  if (rpc.method === "tools/call") {
-    const name = rpc.params?.name;
-    const args = rpc.params?.arguments ?? {};
+const mcpHandler = createMcpHandler((ctx) => {
+  const auth = ctx.authInfo ?? {};
+  const agentId = auth.clientId;
+  if (!validAgentId(agentId)) throw new Error("unauthorized");
+  const agent = { id: agentId, display_name: auth.displayName ?? agentId };
+  const server = new McpServer({ name: "yara-universal-gateway", version: "0.2.0" });
+
+  const register = (name, options) => server.registerTool(name, options, async (args) => {
     try {
-      const result = await callMcpTool(request.agent, name, args, request.id);
-      return reply.send(mcpText(rpc.id, result));
+      const result = await callMcpTool(agent, name, args, auth.requestId ?? null);
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (error) {
-      await audit(request.agent.id, "mcp.tool.call", String(name ?? "unknown"), "error", request.id, { code: error.message }).catch(() => {});
-      return reply.send(mcpText(rpc.id, { error: error.message }, true));
+      await audit(agent.id, "mcp.tool.call", name, "error", auth.requestId ?? null, { code: error.message }).catch(() => {});
+      return { content: [{ type: "text", text: error.message }], isError: true };
     }
-  }
-  return reply.send(rpcError(rpc.id, -32601, "Method not found"));
-});
+  });
 
-app.get("/mcp", async (_request, reply) => reply.code(405).send({ error: "method_not_allowed" }));
-app.delete("/mcp", async (_request, reply) => reply.code(405).send({ error: "method_not_allowed" }));
+  register("yara_identity", {
+    description: "Return the authenticated YARA agent identity.",
+    annotations: { readOnlyHint: true },
+    inputSchema: z.object({}).strict()
+  });
+  register("yara_read_file", {
+    description: "Read a file from the configured YARA repository.",
+    annotations: { readOnlyHint: true },
+    inputSchema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      path: z.string().min(1).max(400)
+    }).strict()
+  });
+  register("yara_create_branch", {
+    description: "Create a branch under the authenticated agent namespace, based on main.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      name: z.string().regex(/^[a-z0-9][a-z0-9-]{1,79}$/)
+    }).strict()
+  });
+  register("yara_write_file", {
+    description: "Create or update a file only on the authenticated agent's own branch.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      path: z.string().min(1).max(400),
+      branch: z.string().min(1).max(200),
+      content: z.string().max(500000),
+      message: z.string().min(1).max(200),
+      sha: z.string().regex(/^[a-f0-9]{40}$/).optional()
+    }).strict()
+  });
+  register("yara_create_draft_pr", {
+    description: "Create a draft pull request from the authenticated agent's branch to main. Does not merge.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      head: z.string().min(1).max(200),
+      title: z.string().min(1).max(200),
+      body: z.string().max(10000).optional()
+    }).strict()
+  });
+
+  return server;
+}, {
+  legacy: "stateless",
+  responseMode: "auto",
+  maxRequestBodySize: 1024 * 1024
+});
+const mcpNodeHandler = toNodeHandler(mcpHandler, { maxRequestBodySize: 1024 * 1024 });
+
+app.all("/mcp", { preHandler: authenticate }, async (request, reply) => {
+  const token = parseBearer(request.headers.authorization);
+  request.raw.auth = {
+    token: hashToken(token),
+    clientId: request.agent.id,
+    scopes: ["project:read", "branch:write", "pull_request:create"],
+    displayName: request.agent.display_name,
+    requestId: request.id
+  };
+  reply.hijack();
+  await mcpNodeHandler(request.raw, reply.raw, request.body);
+});
 
 app.get("/healthz", async (_request, reply) => {
   await pool.query("SELECT 1");
