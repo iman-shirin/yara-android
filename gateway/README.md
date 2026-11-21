@@ -20,9 +20,9 @@ All agent endpoints require `Authorization: Bearer <agent-token>`.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/healthz` | Service and database health |
-| POST | `/v1/admin/agents` | Owner bootstrap: create an agent identity |
+| POST | `/v1/admin/agents` | Owner bootstrap: create an agent identity |\n| POST | `/v1/admin/agents/{id}/rotate` | Rotate an agent credential; old token stops working |
 | POST | `/v1/admin/agents/{id}/revoke` | Owner bootstrap: revoke an agent |
-| GET | `/v1/agents/me` | Return authenticated agent identity |
+| POST | `/v1/projects/{owner}/{repo}/branches` | Create an agent-scoped branch from main |\n| GET | `/v1/agents/me` | Return authenticated agent identity |
 | GET | `/v1/projects/{owner}/{repo}/files?path=...` | Read a repository file |
 | PUT | `/v1/projects/{owner}/{repo}/files` | Create/update a file on the agent's own branch |
 | POST | `/v1/projects/{owner}/{repo}/pull-requests` | Open a draft PR from the agent's own branch to main |
@@ -37,9 +37,9 @@ Content-Type: application/json
 {"id":"agent-claude","displayName":"Claude"}
 ```
 
-The response contains the agent token once. Store it in that provider's secret store; it cannot be retrieved later. Revoke and reprovision if lost.
+The response contains the agent token once. Store it in that provider's secret store; it cannot be retrieved later. Rotate the credential if lost; the previous token is invalidated immediately.
 
-A branch must use the authenticated agent namespace, for example `agents/agent-claude/task-123`. The Gateway never exposes a merge endpoint and never writes directly to `main`.
+Set `GITHUB_REPOSITORY` to the single repository the Gateway may access. Requests for any other repository are denied, even if the GitHub App installation can see it. A branch must use the authenticated agent namespace, for example `agents/agent-claude/task-123`. The Gateway never exposes a merge endpoint and never writes directly to `main`.
 
 ## Required GitHub App permissions
 
