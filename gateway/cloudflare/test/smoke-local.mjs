@@ -10,10 +10,10 @@ child.stdout.on('data',(chunk)=>{output+=chunk.toString();});
 child.stderr.on('data',(chunk)=>{output+=chunk.toString();});
 
 async function waitForWorker(){
-  for(let i=0;i<60;i+=1){
+  for(let i=0;i<40;i+=1){
     if(child.exitCode!==null) throw new Error('wrangler dev exited early: '+output);
-    try { const response=await fetch(base+'/healthz',{signal:AbortSignal.timeout(1500)}); if(response.ok) return; } catch {}
-    await new Promise(resolve=>setTimeout(resolve,500));
+    try { const response=await fetch(base+'/healthz',{signal:AbortSignal.timeout(500)}); if(response.ok) return; } catch {}
+    await new Promise(resolve=>setTimeout(resolve,250));
   }
   throw new Error('Worker did not become ready: '+output);
 }
