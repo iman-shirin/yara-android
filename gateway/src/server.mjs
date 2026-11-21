@@ -249,9 +249,10 @@ async function callMcpTool(agent, name, args, requestId) {
     if (idempotencyKey && (typeof idempotencyKey !== "string" || idempotencyKey.length > 128)) throw new Error("invalid_idempotency_key");
     const { randomUUID } = await import("node:crypto");
     const inserted = await pool.query(
-      "INSERT INTO yara_messages(id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",
+      "INSERT INTO yara_messages(id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (sender_id,idempotency_key) DO NOTHING RETURNING *",
       [randomUUID(), agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
     );
+    if (!inserted.rowCount) throw new Error("duplicate_message");
     await audit(agent.id, "message.send", recipientId ?? "broadcast", "success", requestId, { messageId: inserted.rows[0].id });
     return { message: inserted.rows[0] };
   }
