@@ -123,3 +123,5 @@ jobs:
         run: npm test
       - name: Validate MCP deployment smoke script
         run: bash -n scripts/smoke-mcp.sh
+      - name: Build Gateway Docker image
+        run: docker build -t yara-gateway:ci .
