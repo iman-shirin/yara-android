@@ -9,7 +9,7 @@ import { migrateCollaboration, registerCollaborationRoutes, validateTaskPayload,
 
 const { Pool } = pg;
 const env = process.env;
-const required = ["DATABASE_URL", "YARA_BOOTSTRAP_TOKEN", "GITHUB_APP_ID", "GITHUB_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY_BASE64", "GITHUB_REPOSITORY"];
+const required = ["DATABASE_URL", "YARA_BOOTSTRAP_TOKEN", "GITHUB_REPOSITORY"];
 for (const key of required) {
   if (!env[key]) throw new Error(`Missing required environment variable: ${key}`);
 }
@@ -31,7 +31,15 @@ const allowedHosts = [...new Set(["localhost", "127.0.0.1", ...configuredHosts])
 const app = createMcpFastifyApp({ host: env.HOST ?? "0.0.0.0", allowedHosts });
 app.server.requestTimeout = 15000;
 
-const privateKey = createPrivateKey(Buffer.from(env.GITHUB_APP_PRIVATE_KEY_BASE64, "base64").toString("utf8"));
+const githubConfigKeys = ["GITHUB_APP_ID", "GITHUB_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY_BASE64"];
+const githubConfigPresent = githubConfigKeys.filter((key) => Boolean(env[key]));
+if (githubConfigPresent.length > 0 && githubConfigPresent.length !== githubConfigKeys.length) {
+  throw new Error("GitHub App configuration is incomplete; provide all three GitHub App variables or none");
+}
+const githubConfigured = githubConfigPresent.length === githubConfigKeys.length;
+const privateKey = githubConfigured
+  ? createPrivateKey(Buffer.from(env.GITHUB_APP_PRIVATE_KEY_BASE64, "base64").toString("utf8"))
+  : null;
 let installationToken = null;
 let installationTokenExpiresAt = 0;
 
@@ -92,6 +100,7 @@ async function authenticate(request, reply) {
 }
 
 function appJwt() {
+  if (!githubConfigured) throw new Error("github_app_not_configured");
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(JSON.stringify({
@@ -104,6 +113,7 @@ function appJwt() {
 }
 
 async function githubToken() {
+  if (!githubConfigured) throw new Error("github_app_not_configured");
   if (installationToken && Date.now() < installationTokenExpiresAt - 60000) return installationToken;
   const response = await fetch(`https://api.github.com/app/installations/${encodeURIComponent(env.GITHUB_INSTALLATION_ID)}/access_tokens`, {
     method: "POST",
