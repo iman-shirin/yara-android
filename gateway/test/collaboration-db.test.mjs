@@ -28,14 +28,14 @@ if (!databaseUrl) {
     await migrateCollaboration(pool);
     await pool.query("DELETE FROM yara_messages");
     await pool.query("DELETE FROM yara_tasks");
-    await pool.query("DELETE FROM yara_agents WHERE id IN ('agent-test-a','agent-test-b')");
+    await pool.query("DELETE FROM yara_agents WHERE id IN ('agent-test-a','agent-test-b','agent-test-c')");
     await pool.query(
-      "INSERT INTO yara_agents(id,display_name,token_hash) VALUES ('agent-test-a','Test A','hash-a'),('agent-test-b','Test B','hash-b')"
+      "INSERT INTO yara_agents(id,display_name,token_hash) VALUES ('agent-test-a','Test A','hash-a'),('agent-test-b','Test B','hash-b'),('agent-test-c','Test C','hash-c')"
     );
     app = Fastify({ logger: false });
     const authenticate = async (request, reply) => {
       const id = request.headers["x-agent-id"];
-      if (!["agent-test-a", "agent-test-b"].includes(id)) return reply.code(401).send({ error: "unauthorized" });
+      if (!["agent-test-a", "agent-test-b", "agent-test-c"].includes(id)) return reply.code(401).send({ error: "unauthorized" });
       request.agent = { id, display_name: id };
     };
     registerCollaborationRoutes(app, { pool, authenticate, audit: async () => {} });
@@ -135,6 +135,6 @@ if (!databaseUrl) {
     const messages = await call("GET", `/v1/tasks/${id}/messages`, "agent-test-a");
     assert.equal(messages.statusCode, 200);
     const stranger = await call("GET", `/v1/tasks/${id}/messages`, "agent-test-c");
-    assert.equal(stranger.statusCode, 401);
+    assert.equal(stranger.statusCode, 404);
   });
 }
