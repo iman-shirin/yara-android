@@ -182,7 +182,8 @@ Hosting vendor, data region, budget, identity provider and retention policy rema
 - [ ] Expand to remaining agents only after passing the same acceptance suite.
 
 ### Stage 5 — Operational readiness
-- [~] Prepare Railway Infrastructure as Code for a Gateway service and PostgreSQL database; Railway account connection and plan/apply remain pending.\n- [ ] Deploy to the owner-approved host and region.
+- [~] Prepare Railway Infrastructure as Code for a Gateway service and PostgreSQL database; Railway account connection and plan/apply remain pending.
+- [ ] Deploy to the owner-approved host and region.
 - [ ] Verify backups, restore, monitoring, rate limits and cost ceilings.
 - [ ] Run multi-agent concurrency and failure-injection tests.
 - [ ] Verify owner approval is required for every Main promotion.
@@ -225,7 +226,9 @@ The following code has been committed to the execution branch, not to `main`:
 - `gateway/src/security.mjs` and `gateway/test/security.test.mjs`: credential hashing/generation, constant-time comparison, input/path validation and agent branch isolation tests.
 - `gateway/Dockerfile`, `gateway/package.json`, `gateway/.env.example`, `gateway/README.md`: container and local deployment scaffolding.
 - `.github/workflows/android.yml`: Gateway syntax and unit-test job added to the existing PR workflow.
-- `.github/workflows/gateway.yml`: standalone Gateway workflow for after this workflow is present on the default branch.\n- `.railway/railway.ts`: Railway Infrastructure as Code declaration for a PostgreSQL database and Gateway service; it has not been applied to an account.\n- `gateway/GITHUB_APP_SETUP.md`: exact minimal GitHub App permission and secret-injection checklist.
+- `.github/workflows/gateway.yml`: standalone Gateway workflow for after this workflow is present on the default branch.
+- `.railway/railway.ts`: Railway Infrastructure as Code declaration for a PostgreSQL database and Gateway service; it has not been applied to an account.
+- `gateway/GITHUB_APP_SETUP.md`: exact minimal GitHub App permission and secret-injection checklist.
 
 **Verified on PR head `c483d3815905edd53c1f77eed30442cd33dccf22` (2026-11-21):** Gateway workflow run #18 passed dependency installation, JavaScript syntax checks and all 6 security unit tests. Android workflow run #111 passed all 18 Android unit tests and built the debug APK; SHA-256 `52a2b05e0c5db76367e771ef971cbff4ac2046c8b4d679d1adf554ffafac66cc`.
 
