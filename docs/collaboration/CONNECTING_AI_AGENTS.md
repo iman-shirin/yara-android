@@ -44,14 +44,14 @@ The Gateway exchanges its app identity for short-lived installation tokens. Neve
 
 The initial Gateway code now includes a stateless JSON-RPC MCP endpoint at `POST /mcp` with authenticated tools for identity, repository reads, agent-scoped branch creation, file writes and draft PR creation. It is not deployed yet. The Gateway exposes a stable, authenticated tool surface. Prefer remote MCP for clients that support it. Use a vendor-specific adapter/API runtime for clients that do not support the required remote protocol. Do not claim an integration is live until its end-to-end tests pass.
 
-| Assistant | Planned adapter | Required owner action |
+| Assistant | Verified connection path supported by current client/product docs | Required owner action |
 |---|---|---|
-| ChatGPT | Remote MCP connector or supported ChatGPT app integration; current GitHub connection can continue during migration | Authorize the YARA Gateway connection in ChatGPT |
-| Claude | Remote MCP connector | Authorize the YARA Gateway connection in Claude |
-| Gemini | Gemini-compatible tool/API adapter; MCP only where the chosen Gemini client supports it | Authorize the selected Gemini runtime/API |
-| Grok | xAI API/tool adapter; MCP only where the selected client supports it | Authorize the selected Grok runtime/API |
-| Perplexity | Perplexity API/connector adapter according to the selected product's current capabilities | Authorize the selected Perplexity runtime/API |
-| GitHub Copilot | GitHub-native repository/agent integration and/or Gateway MCP where supported by the selected Copilot surface | Authorize the GitHub/Copilot integration |
+| ChatGPT | Existing GitHub integration is connected and has repository read/write. Custom remote MCP is not available on the current Free plan; a separate OpenAI API runtime is possible through the Responses API with separate API billing. | Keep the GitHub connection authorized; API runtime requires a separate API project/key if chosen. |
+| Claude | Remote MCP custom connector is supported on Free/Pro/Max/Ultra/Team/Enterprise; Free is limited to one custom connector. | Add the deployed HTTPS MCP endpoint and the Claude-specific bearer token. |
+| Gemini | Gemini CLI and Gemini API managed-agent runtimes support remote MCP; the consumer Gemini chat surface is not assumed to support custom MCP. | Configure the selected CLI/API runtime with its own token. |
+| Grok | xAI Grok CLI supports remote HTTP MCP and static authorization headers; consumer Grok surfaces are not assumed to support custom MCP. | Configure the selected CLI/runtime with its own token. |
+| Perplexity | Custom remote MCP connectors are supported on Pro, Max and Enterprise. | Add the deployed HTTPS endpoint and the Perplexity-specific token. |
+| GitHub Copilot | Remote MCP is supported in Copilot CLI, Copilot app, IDEs and cloud agent. Repository-level cloud-agent configuration requires repository administrator setup. | Configure the selected Copilot surface and store its dedicated token in the supported secret store. |
 
 These are integration targets, not claims that all six are currently connected. Product capabilities vary by plan, client and release; verify the exact client before enabling each adapter.
 
