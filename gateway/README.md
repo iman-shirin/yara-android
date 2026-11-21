@@ -63,9 +63,9 @@ The IaC file is a desired-state declaration only. It has not been applied to a R
 
 Run the post-deployment read-only smoke test after provisioning an agent token:
 
-\`\`\`bash
+```bash
 MCP_URL=https://<gateway-domain>/mcp YARA_AGENT_TOKEN=<secret> bash scripts/smoke-mcp.sh
-\`\`\`
+```
 
 The script verifies HTTPS, MCP initialization, tool discovery, authenticated identity and unauthenticated denial. It does not create branches or write repository files.
 
