@@ -1,0 +1,45 @@
+name: YARA Cloudflare Worker checks
+
+on:
+  push:
+    branches: [feat/cloudflare-workers-d1-migration]
+    paths:
+      - 'gateway/cloudflare/**'
+      - '.github/workflows/yara-cloudflare.yml'
+  pull_request:
+    branches: [feat/yara-collaboration-hub-foundation]
+    paths:
+      - 'gateway/cloudflare/**'
+      - '.github/workflows/yara-cloudflare.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  worker-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: gateway/cloudflare
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Report dependency audit
+        run: |
+          npm audit --json > audit.json || true
+          node -e 'const a=require("./audit.json"); console.log(JSON.stringify({metadata:a.metadata?.vulnerabilities, vulnerabilities:Object.entries(a.vulnerabilities??{}).map(([name,v])=>({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable}))}, null, 2))'
+      - name: Check JavaScript syntax
+        run: npm run check
+      - name: Run security and validation tests
+        run: npm test
+      - name: Apply D1 migrations to local database
+        run: npx wrangler d1 migrations apply yara-collaboration --local
+      - name: Build Worker without deploying
+        run: npx wrangler deploy --dry-run
