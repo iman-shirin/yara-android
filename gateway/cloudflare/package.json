@@ -8,7 +8,8 @@
     "db:local": "wrangler d1 migrations apply yara-collaboration --local",
     "db:remote": "wrangler d1 migrations apply yara-collaboration --remote",
     "check": "node --check src/index.mjs && node --check src/security.mjs && node --check src/collaboration.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "smoke": "node test/smoke-local.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",
