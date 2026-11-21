@@ -5,7 +5,7 @@
 **Verified baseline:** `main` @ `b77624b2626883c528f3178d520c42d7a29f4ce4`  
 **Execution branch:** `feat/yara-collaboration-hub-foundation`  
 **Status:** Owner-authorized; staged implementation in progress  
-**Main-branch policy:** No agent or automation may merge to `main). Owner approval is mandatory for every promotion to `main`.
+**Main-branch policy:** No agent or automation may merge to the main branch. Owner approval is mandatory for every promotion to `main`.
 
 ## 1. Objective
 
@@ -81,7 +81,7 @@ Authorization is checked immediately before execution. Delegation never increase
 ## 5. Main-branch protection and review
 
 Required target configuration:
-- Protect `main) against direct pushes and force pushes.
+- Protect the main branch against direct pushes and force pushes.
 - Require a pull request for all changes.
 - Require successful CI checks.
 - Require at least one independent review and an explicit owner approval for every merge.
@@ -137,9 +137,9 @@ Hosting vendor, data region, budget, identity provider and retention policy rema
 - [ ] Define testable threat scenarios and acceptance criteria.
 
 ### Stage 2 — Shared developer workspace
-- [ ] Add a reproducible Codespaces/devcontainer configuration for the verified Android toolchain.
+- [x] Add an initial Codespaces/devcontainer configuration for the Android toolchain (execution in a real Codespace remains unverified).
 - [ ] Document local setup, environment variables and secret handling.
-- [ ] Add PR templates, issue templates and agent contribution instructions.
+- [x] Add shared agent contribution instructions; PR/issue templates remain pending.
 - [ ] Validate the existing Android workflow on the exact candidate commit.
 - [ ] Configure and test Main protection after owner review.
 
