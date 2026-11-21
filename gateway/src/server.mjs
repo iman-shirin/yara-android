@@ -5,7 +5,7 @@ import { assertAgentBranch, hashToken, issueAgentToken, safeEqual, validAgentId,
 
 const { Pool } = pg;
 const env = process.env;
-const required = ["DATABASE_URL", "YARA_BOOTSTRAP_TOKEN", "GITHUB_APP_ID", "GITHUB_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY_BASE64"];
+const required = ["DATABASE_URL", "YARA_BOOTSTRAP_TOKEN", "GITHUB_APP_ID", "GITHUB_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY_BASE64", "GITHUB_REPOSITORY"];
 for (const key of required) {
   if (!env[key]) throw new Error(`Missing required environment variable: ${key}`);
 }
@@ -140,6 +140,11 @@ function validateRepo(owner, repo, path) {
     error.statusCode = 400;
     throw error;
   }
+  if (`${owner}/${repo}` !== env.GITHUB_REPOSITORY) {
+    const error = new Error("repository_not_allowed");
+    error.statusCode = 403;
+    throw error;
+  }
 }
 
 app.get("/healthz", async (_request, reply) => {
@@ -169,6 +174,22 @@ app.post("/v1/admin/agents", async (request, reply) => {
   }
   await audit("owner", "agent.provision", id, "success", request.id, { capabilities: ["project:read", "branch:write", "pull_request:create"] });
   return reply.code(201).send({ id, token, warning: "Store this token securely. It will not be shown again." });
+});
+
+app.post("/v1/admin/agents/:id/rotate", async (request, reply) => {
+  const supplied = parseBearer(request.headers.authorization);
+  if (!supplied || !safeEqual(supplied, env.YARA_BOOTSTRAP_TOKEN)) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+  const token = issueAgentToken();
+  const result = await pool.query(
+    "UPDATE yara_agents SET token_hash=$2, active=true, revoked_at=NULL WHERE id=$1 RETURNING id",
+    [request.params.id, hashToken(token)]
+  );
+  await audit("owner", "agent.token.rotate", request.params.id, result.rowCount ? "success" : "not_found", request.id);
+  return result.rowCount
+    ? reply.send({ id: request.params.id, token, warning: "Store this token securely. It will not be shown again." })
+    : reply.code(404).send({ error: "agent_not_found" });
 });
 
 app.post("/v1/admin/agents/:id/revoke", async (request, reply) => {
