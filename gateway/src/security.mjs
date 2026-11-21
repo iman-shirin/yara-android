@@ -69,7 +69,10 @@ export function assertWritablePath(path) {
   if (blocked.some((prefix) => normalized === prefix || normalized.startsWith(prefix))) {
     throw new Error("protected_path");
   }
-  if (normalized.split("/").some((segment) => segment === ".env" || segment.startsWith(".env."))) {\n    throw new Error("protected_path");\n  }\n  if (normalized.endsWith(".pem") || normalized.endsWith(".key") ||
+  if (normalized.split("/").some((segment) => segment === ".env" || segment.startsWith(".env."))) {
+    throw new Error("protected_path");
+  }
+  if (normalized.endsWith(".pem") || normalized.endsWith(".key") ||
       normalized.endsWith(".p12") || normalized.endsWith(".jks") ||
       normalized.endsWith(".keystore") || normalized.endsWith("local.properties")) {
     throw new Error("protected_path");
