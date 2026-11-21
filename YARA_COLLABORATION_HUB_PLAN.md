@@ -208,16 +208,17 @@ Hosting vendor, data region, budget, identity provider and retention policy rema
 
 ## 10. Owner approval gates
 
-Owner approval is required for:
-- repository visibility changes;
-- selecting hosting vendor, region and recurring spend;
-- connecting provider accounts or granting external agents repository write;
-- changing data retention, privacy or secret-handling policy;
-- changing Main protection or merge permissions;
-- merging any PR into `main`;
-- releases, signing and production deployment.
+The owner has authorized the implementation work and the initial staging host has been selected as Railway. The Railway IaC declaration is prepared, but no paid resource has been provisioned. No recurring charge will be incurred until the account's plan and expected cost are visible and within an explicit budget.
 
-This execution plan records the owner's authorization to begin the architecture work. It does not grant agents blanket access or authorize any of the gated actions above.
+The following actions still require the owner's authenticated account session because the connected tools cannot perform them:
+- create the dedicated GitHub App and generate its private key;
+- connect the Railway account and approve any billable infrastructure plan;
+- authorize provider accounts and place their individual tokens in the relevant secret stores;
+- change repository visibility or enforce branch-protection settings;
+- approve any release/signing action;
+- approve every merge into `main`.
+
+This authorization allows implementation, testing and preparation on feature branches. It does not grant agents blanket access or bypass the owner-only `main` promotion rule.
 
 ## 11. Current implementation evidence (2026-11-21)
 
