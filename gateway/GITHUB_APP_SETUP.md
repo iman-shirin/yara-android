@@ -41,7 +41,7 @@ The `.railway/railway.ts` file declares the Railway Gateway and PostgreSQL resou
 - `GITHUB_INSTALLATION_ID`: installation ID for this repository.
 - `GITHUB_APP_PRIVATE_KEY_BASE64`: Base64-encoded PEM private key.
 - `GITHUB_REPOSITORY`: exactly `iman-shirin/yara-android`.
-- `PGSSLMODE`: `require`.
+- `PGSSLMODE`: `disable` when using Railway private networking (service-to-service traffic is encrypted by Railway WireGuard); use `require` with a verified TLS certificate when the database is hosted outside that private network.
 
 Do not put real values in `.env.example` or any Git-tracked file.
 
