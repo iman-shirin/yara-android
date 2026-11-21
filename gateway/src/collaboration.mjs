@@ -96,7 +96,7 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     try {
       await client.query("BEGIN");
       const selected = await client.query(
-        "SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=$1) AND attempts < max_attempts ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1",
+        "SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=$1) AND attempts < max_attempts ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         [request.agent.id]
       );
       if (!selected.rowCount) { await client.query("COMMIT"); return reply.code(204).send(); }
