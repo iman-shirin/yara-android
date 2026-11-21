@@ -147,6 +147,119 @@ function validateRepo(owner, repo, path) {
   }
 }
 
+function rpcError(id, code, message) {
+  return { jsonrpc: "2.0", id: id ?? null, error: { code, message } };
+}
+
+function mcpText(id, value, isError = false) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    result: { content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], isError }
+  };
+}
+
+async function callMcpTool(agent, name, args, requestId) {
+  const { owner, repo } = args;
+  if (!validRepoPart(owner) || !validRepoPart(repo) || `${owner}/${repo}` !== env.GITHUB_REPOSITORY) {
+    throw new Error("repository_not_allowed");
+  }
+  if (name === "yara_identity") {
+    await audit(agent.id, "mcp.identity", agent.id, "success", requestId);
+    return { id: agent.id, displayName: agent.display_name, status: "active" };
+  }
+  if (name === "yara_read_file") {
+    validateRepo(owner, repo, args.path);
+    const data = await githubRequest(`/repos/${owner}/${repo}/contents/${args.path.split("/").map(encodeURIComponent).join("/")}`);
+    if (Array.isArray(data) || !data.content) throw new Error("file_not_found");
+    await audit(agent.id, "mcp.file.read", `${owner}/${repo}/${args.path}`, "success", requestId, { sha: data.sha });
+    return { path: args.path, sha: data.sha, content: Buffer.from(data.content, "base64").toString("utf8") };
+  }
+  if (name === "yara_create_branch") {
+    if (typeof args.name !== "string" || !/^[a-z0-9][a-z0-9-]{1,79}$/.test(args.name)) throw new Error("invalid_branch_name");
+    const branch = `agents/${agent.id}/${args.name}`;
+    assertAgentBranch(agent.id, branch);
+    const base = await githubRequest(`/repos/${owner}/${repo}/git/ref/heads/main`);
+    const created = await githubRequest(`/repos/${owner}/${repo}/git/refs`, {
+      method: "POST", body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: base.object.sha })
+    });
+    await audit(agent.id, "mcp.branch.create", `${owner}/${repo}/${branch}`, "success", requestId, { baseSha: base.object.sha });
+    return { branch, base: "main", commitSha: created.object.sha };
+  }
+  if (name === "yara_write_file") {
+    validateRepo(owner, repo, args.path);
+    assertAgentBranch(agent.id, args.branch);
+    if (typeof args.content !== "string" || Buffer.byteLength(args.content, "utf8") > 500000 ||
+        typeof args.message !== "string" || args.message.trim().length < 1 || args.message.length > 200) {
+      throw new Error("invalid_write_payload");
+    }
+    const payload = { message: args.message, content: Buffer.from(args.content, "utf8").toString("base64"), branch: args.branch };
+    if (typeof args.sha === "string" && /^[a-f0-9]{40}$/.test(args.sha)) payload.sha = args.sha;
+    const data = await githubRequest(`/repos/${owner}/${repo}/contents/${args.path.split("/").map(encodeURIComponent).join("/")}`, {
+      method: "PUT", body: JSON.stringify(payload)
+    });
+    await audit(agent.id, "mcp.file.write", `${owner}/${repo}/${args.path}`, "success", requestId, { branch: args.branch, commitSha: data.commit?.sha });
+    return { branch: args.branch, commitSha: data.commit?.sha, contentSha: data.content?.sha };
+  }
+  if (name === "yara_create_draft_pr") {
+    if (typeof args.title !== "string" || args.title.trim().length < 1 || args.title.length > 200 ||
+        typeof (args.body ?? "") !== "string" || (args.body ?? "").length > 10000) throw new Error("invalid_pull_request_payload");
+    assertAgentBranch(agent.id, args.head);
+    const data = await githubRequest(`/repos/${owner}/${repo}/pulls`, {
+      method: "POST",
+      body: JSON.stringify({ title: args.title, body: args.body ?? "", head: args.head, base: "main", draft: true })
+    });
+    await audit(agent.id, "mcp.pull_request.create", data.html_url, "success", requestId, { number: data.number, head: args.head });
+    return { number: data.number, url: data.html_url, draft: data.draft };
+  }
+  throw new Error("unknown_tool");
+}
+
+const mcpTools = [
+  { name: "yara_identity", description: "Return the authenticated YARA agent identity.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "yara_read_file", description: "Read a file from the configured YARA repository.", inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string" } }, required: ["owner", "repo", "path"], additionalProperties: false } },
+  { name: "yara_create_branch", description: "Create a branch under the authenticated agent namespace, based on main.", inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, name: { type: "string" } }, required: ["owner", "repo", "name"], additionalProperties: false } },
+  { name: "yara_write_file", description: "Create or update a file only on the authenticated agent's own branch.", inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string" }, branch: { type: "string" }, content: { type: "string" }, message: { type: "string" }, sha: { type: "string" } }, required: ["owner", "repo", "path", "branch", "content", "message"], additionalProperties: false } },
+  { name: "yara_create_draft_pr", description: "Create a draft pull request from the authenticated agent's branch to main. Does not merge.", inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, head: { type: "string" }, title: { type: "string" }, body: { type: "string" } }, required: ["owner", "repo", "head", "title"], additionalProperties: false } }
+];
+
+app.post("/mcp", { preHandler: authenticate }, async (request, reply) => {
+  const rpc = request.body;
+  if (!rpc || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
+    return reply.code(400).send(rpcError(rpc?.id, -32600, "Invalid JSON-RPC request"));
+  }
+  if (rpc.method === "notifications/initialized" || rpc.method.startsWith("notifications/")) {
+    return reply.code(202).send();
+  }
+  if (rpc.method === "initialize") {
+    return reply.send({
+      jsonrpc: "2.0", id: rpc.id,
+      result: {
+        protocolVersion: "2025-03-26",
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: "yara-universal-gateway", version: "0.1.0" }
+      }
+    });
+  }
+  if (rpc.method === "ping") return reply.send({ jsonrpc: "2.0", id: rpc.id, result: {} });
+  if (rpc.method === "tools/list") return reply.send({ jsonrpc: "2.0", id: rpc.id, result: { tools: mcpTools } });
+  if (rpc.method === "tools/call") {
+    const name = rpc.params?.name;
+    const args = rpc.params?.arguments ?? {};
+    try {
+      const result = await callMcpTool(request.agent, name, args, request.id);
+      return reply.send(mcpText(rpc.id, result));
+    } catch (error) {
+      await audit(request.agent.id, "mcp.tool.call", String(name ?? "unknown"), "error", request.id, { code: error.message }).catch(() => {});
+      return reply.send(mcpText(rpc.id, { error: error.message }, true));
+    }
+  }
+  return reply.send(rpcError(rpc.id, -32601, "Method not found"));
+});
+
+app.get("/mcp", async (_request, reply) => reply.code(405).send({ error: "method_not_allowed" }));
+app.delete("/mcp", async (_request, reply) => reply.code(405).send({ error: "method_not_allowed" }));
+
 app.get("/healthz", async (_request, reply) => {
   await pool.query("SELECT 1");
   return reply.send({ status: "ok", service: "yara-universal-gateway" });
