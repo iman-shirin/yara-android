@@ -140,7 +140,7 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
       const retry = outcome === "failed" && task.rows[0].attempts < task.rows[0].max_attempts;
       const status = outcome === "completed" ? "completed" : retry ? "queued" : "failed";
       const updated = await client.query(
-        "UPDATE yara_tasks SET status=$2,result=$3,lease_until=NULL,updated_at=now(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE NULL END WHERE id=$1 RETURNING *",
+        "UPDATE yara_tasks SET status=$2,assigned_to=CASE WHEN $2='queued' THEN NULL ELSE assigned_to END,result=$3,lease_until=NULL,updated_at=now(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE NULL END WHERE id=$1 RETURNING *",
         [request.params.id, status, JSON.stringify(resultBody)]
       );
       await client.query(
