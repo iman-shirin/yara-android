@@ -42,7 +42,7 @@ The Gateway exchanges its app identity for short-lived installation tokens. Neve
 
 ## Provider connection methods
 
-The initial Gateway code now includes a stateless JSON-RPC MCP endpoint at `POST /mcp` with authenticated tools for identity, repository reads, agent-scoped branch creation, file writes and draft PR creation. It is not deployed yet. The Gateway exposes a stable, authenticated tool surface. Prefer remote MCP for clients that support it. Use a vendor-specific adapter/API runtime for clients that do not support the required remote protocol. Do not claim an integration is live until its end-to-end tests pass.
+The Gateway code now includes a stateless JSON-RPC MCP endpoint at `POST /mcp` with authenticated tools for identity, repository access, agent-scoped branch creation, file writes, draft PRs, durable task creation/listing/claiming/completion, lease heartbeats, and direct/broadcast messaging with acknowledgements. PostgreSQL task/message storage and retry/lease recovery are implemented and covered by CI integration tests. The Gateway is not deployed yet. The tool surface is available after deployment and agent provisioning. Prefer remote MCP for clients that support it. Use a vendor-specific adapter/API runtime for clients that do not support the required remote protocol. Do not claim an integration is live until its end-to-end tests pass.
 
 | Assistant | Verified connection path supported by current client/product docs | Required owner action |
 |---|---|---|
@@ -104,6 +104,7 @@ Then the owner changes repository visibility to private in GitHub settings. Imme
 - Visibility: public.
 - Connected ChatGPT GitHub integration can read and write this repository.
 - An isolated collaboration foundation branch and draft PR #22 exist.
+- Durable task/message APIs and MCP tools are implemented on PR #22; PostgreSQL integration tests run in GitHub Actions.
 - No dedicated YARA GitHub App or YARA Gateway has been deployed.
 - No Claude, Gemini, Grok, Perplexity or Copilot runtime has been verified through the Gateway.
 - No repository visibility change has been made.
