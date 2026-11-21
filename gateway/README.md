@@ -55,16 +55,16 @@ Install a dedicated app only on `iman-shirin/yara-android` with:
 
 Do not grant Administration, Actions write, Secrets, or Workflows permissions. The installation token is short-lived and held only in process memory.
 
-## Deployment requirements — not yet completed
+## Railway deployment scaffold\n\nThe repository contains `.railway/railway.ts`, which declares a Railway PostgreSQL service and the Gateway service. It uses the `gateway` directory as the service root, detects its Dockerfile, configures `/healthz`, and preserves the required secret variables for secure manual injection. Railway's current Infrastructure as Code format is used; the older `railway.json` Config-as-Code format was removed because Railway has deprecated it for new services.\n\nThe IaC file is a desired-state declaration only. It has not been applied to a Railway account, and no database or public endpoint has been provisioned.\n\n## Deployment requirements — not yet completed
 
-1. Create a dedicated GitHub App and install it on the repository.
-2. Provision PostgreSQL with TLS, encrypted storage, backups and a restricted database role.
-3. Inject the App private key and bootstrap secret through a managed secret store.
-4. Use a TLS reverse proxy, restrict ingress, configure rate limiting and network egress.
-5. Configure database backup/restore, monitoring, alerting, retention and incident response.
-6. Provision one agent identity per actual provider runtime; never share tokens between providers.
-7. Run read, own-branch write, draft-PR, cross-agent denial, revoke and audit verification tests.
-8. Only then switch the repository to private and rerun all provider access tests.
+1. Connect the Railway account and apply `.railway/railway.ts` after reviewing the proposed service/database resources.\n2. Create a dedicated GitHub App and install it on the repository.
+3. Verify Railway PostgreSQL with TLS, encrypted storage, backups and a restricted database role.
+4. Inject the App private key and bootstrap secret through a managed secret store.
+5. Use HTTPS, restrict ingress, configure rate limiting and network egress.
+6. Configure database backup/restore, monitoring, alerting, retention and incident response.
+7. Provision one agent identity per actual provider runtime; never share tokens between providers.
+8. Run read, own-branch write, draft-PR, cross-agent denial, revoke and audit verification tests.
+9. Only then switch the repository to private and rerun all provider access tests.
 
 ## Security limitations to resolve before production
 
