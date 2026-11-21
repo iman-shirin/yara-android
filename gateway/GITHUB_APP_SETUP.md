@@ -4,7 +4,7 @@ This setup is required before the Gateway can access a private repository. The e
 
 ## App configuration
 
-Create a new GitHub App under the project owner's GitHub account.
+Create a new GitHub App under the project owner's GitHub account using [GitHub App creation](https://github.com/settings/apps/new).
 
 - Name: `YARA Collaboration Gateway` (or another globally available name)
 - Homepage URL: `https://github.com/iman-shirin/yara-android`
@@ -64,9 +64,9 @@ The GitHub App's write permission is repository-wide. Branch and protected-path 
 ## Private repository transition
 
 Only after the full verification above:
-1. Enable enforced main-branch rules requiring PRs and successful CI; prevent force-push/deletion and do not grant the App a bypass.
+1. Configure [branch protection](https://github.com/iman-shirin/yara-android/settings/branches): require PRs and successful CI, prevent force-push/deletion, require owner review and do not grant the App a bypass.
 2. Confirm the existing ChatGPT GitHub connection will retain authorized access or replace it with the Gateway connection.
-3. Change repository visibility to private in GitHub settings.
+3. Change repository visibility to private in [repository settings](https://github.com/iman-shirin/yara-android/settings).
 4. Repeat all provider read/write/revocation tests.
 
 This document is a configuration guide. It does not mean the GitHub App has been created or installed.
