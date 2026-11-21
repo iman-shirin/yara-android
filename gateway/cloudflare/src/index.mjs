@@ -25,7 +25,12 @@ async function authenticate(request, env) {
   return getRow(env.DB.prepare('SELECT id,display_name FROM yara_agents WHERE token_hash=? AND active=1').bind(tokenHash));
 }
 
-function derLength(length) { if (length < 128) return Uint8Array.of(length); const bytes=[]; let n=length; while(n>0){bytes.unshift(n&255);n>>=8;} return Uint8Array.of(0x80|bytes.length,...bytes); }\nfunction der(tag, value) { const len=derLength(value.length); const out=new Uint8Array(1+len.length+value.length); out[0]=tag; out.set(len,1); out.set(value,1+len.length); return out; }\nfunction concatBytes(...arrays) { const out=new Uint8Array(arrays.reduce((n,a)=>n+a.length,0)); let offset=0; for(const a of arrays){out.set(a,offset);offset+=a.length;} return out; }\nfunction rsaPkcs1ToPkcs8(pkcs1) { const version=Uint8Array.of(0x02,0x01,0x00); const algorithm=Uint8Array.of(0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01,0x05,0x00); return der(0x30,concatBytes(version,algorithm,der(0x04,pkcs1))); }\n\nlet cachedInstallationToken = null;
+function derLength(length) { if (length < 128) return Uint8Array.of(length); const bytes=[]; let n=length; while(n>0){bytes.unshift(n&255);n>>=8;} return Uint8Array.of(0x80|bytes.length,...bytes); }
+function der(tag, value) { const len=derLength(value.length); const out=new Uint8Array(1+len.length+value.length); out[0]=tag; out.set(len,1); out.set(value,1+len.length); return out; }
+function concatBytes(...arrays) { const out=new Uint8Array(arrays.reduce((n,a)=>n+a.length,0)); let offset=0; for(const a of arrays){out.set(a,offset);offset+=a.length;} return out; }
+function rsaPkcs1ToPkcs8(pkcs1) { const version=Uint8Array.of(0x02,0x01,0x00); const algorithm=Uint8Array.of(0x30,0x0d,0x06,0x09,0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x01,0x01,0x05,0x00); return der(0x30,concatBytes(version,algorithm,der(0x04,pkcs1))); }
+
+let cachedInstallationToken = null;
 let cachedInstallationTokenExpiresAt = 0;
 async function githubToken(env) {
   const keys = ['GITHUB_APP_ID','GITHUB_INSTALLATION_ID','GITHUB_APP_PRIVATE_KEY_BASE64'];
