@@ -107,3 +107,6 @@ Then the owner changes repository visibility to private in GitHub settings. Imme
 - No dedicated YARA GitHub App or YARA Gateway has been deployed.
 - No Claude, Gemini, Grok, Perplexity or Copilot runtime has been verified through the Gateway.
 - No repository visibility change has been made.
+
+
+For provider-specific setup commands, plan limitations and per-client authentication notes, see [PROVIDER_CONNECTIONS.md](./PROVIDER_CONNECTIONS.md).
