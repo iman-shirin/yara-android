@@ -42,7 +42,7 @@ The Gateway exchanges its app identity for short-lived installation tokens. Neve
 
 ## Provider connection methods
 
-The Gateway exposes a stable, authenticated tool surface. Prefer remote MCP for clients that support it. Use a vendor-specific adapter/API runtime for clients that do not support the required remote protocol. Do not claim an integration is live until its end-to-end tests pass.
+The initial Gateway code now includes a stateless JSON-RPC MCP endpoint at `POST /mcp` with authenticated tools for identity, repository reads, agent-scoped branch creation, file writes and draft PR creation. It is not deployed yet. The Gateway exposes a stable, authenticated tool surface. Prefer remote MCP for clients that support it. Use a vendor-specific adapter/API runtime for clients that do not support the required remote protocol. Do not claim an integration is live until its end-to-end tests pass.
 
 | Assistant | Planned adapter | Required owner action |
 |---|---|---|
