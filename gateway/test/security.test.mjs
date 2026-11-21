@@ -46,4 +46,6 @@ test("agent write policy blocks workflow, gateway security and secret paths", ()
   assert.throws(() => assertWritablePath("gateway/config/.env.production"), /protected_path/);
   assert.throws(() => assertWritablePath(".devcontainer/setup.sh"), /protected_path/);
   assert.throws(() => assertWritablePath(".github/actions/custom/action.yml"), /protected_path/);
+  assert.throws(() => assertWritablePath(".railway/railway.ts"), /protected_path/);
+  assert.throws(() => assertWritablePath("AGENTS.md"), /protected_path/);
 });
