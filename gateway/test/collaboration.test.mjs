@@ -19,5 +19,6 @@ test("message payload validates recipients, kinds and bounded body", () => {
   assert.equal(validateMessagePayload({ recipientId: "agent-claude", body: { text: "hello" } }).ok, true);
   assert.equal(validateMessagePayload({ recipientId: "../admin", body: "hello" }).error, "invalid_recipient");
   assert.equal(validateMessagePayload({ kind: "execute-shell", body: "x" }).error, "invalid_message_kind");
+  assert.equal(validateMessagePayload({ idempotencyKey: 7, body: "x" }).error, "invalid_idempotency_key");
   assert.equal(validateMessagePayload({ body: "x".repeat(50001) }).error, "invalid_message_body");
 });
