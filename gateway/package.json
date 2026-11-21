@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test",
-    "check": "node --check src/server.mjs && node --check src/security.mjs && node --check scripts/smoke-mcp.mjs"
+    "check": "node --check src/server.mjs && node --check src/security.mjs && node --check src/collaboration.mjs && node --check scripts/smoke-mcp.mjs"
   },
   "dependencies": {
     "fastify": "5.12.8",
