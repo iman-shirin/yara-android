@@ -368,7 +368,12 @@ app.put("/v1/projects/:owner/:repo/files", { preHandler: authenticate }, async (
     await audit(request.agent.id, "project.file.write", `${owner}/${repo}/${path}`, "denied", request.id, { reason: error.message });
     return reply.code(403).send({ error: error.message });
   }
-  try { assertWritablePath(path); } catch (error) {\n    await audit(request.agent.id, "project.file.write", `${owner}/${repo}/${path}`, "denied", request.id, { reason: error.message });\n    return reply.code(403).send({ error: error.message });\n  }\n  if (typeof content !== "string" || Buffer.byteLength(content, "utf8") > 500000 ||
+  try {
+    assertWritablePath(path);
+  } catch (error) {
+    await audit(request.agent.id, "project.file.write", `${owner}/${repo}/${path}`, "denied", request.id, { reason: error.message });
+    return reply.code(403).send({ error: error.message });
+  }\n  if (typeof content !== "string" || Buffer.byteLength(content, "utf8") > 500000 ||
       typeof message !== "string" || message.trim().length < 1 || message.length > 200) {
     return reply.code(400).send({ error: "invalid_write_payload" });
   }
