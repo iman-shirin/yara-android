@@ -224,7 +224,7 @@ This execution plan records the owner's authorization to begin the architecture 
 The following code has been committed to the execution branch, not to `main`:
 - `gateway/src/server.mjs`: Fastify API, PostgreSQL agent registry, one-time owner bootstrap provisioning, token rotation/revocation, GitHub App JWT and short-lived installation-token exchange, repository allowlist, branch creation, file read/write, draft PR creation and audit events.
 - `gateway/src/security.mjs` and `gateway/test/security.test.mjs`: credential hashing/generation, constant-time comparison, input/path validation and agent branch isolation tests.
-- `gateway/Dockerfile`, `gateway/package.json`, `gateway/.env.example`, `gateway/README.md`: container and local deployment scaffolding.
+- `gateway/Dockerfile`, `gateway/package.json`, `gateway/.env.example`, `gateway/README.md`: container and local deployment scaffolding.\n- `gateway/scripts/smoke-mcp.sh`: read-only post-deployment check for HTTPS, MCP initialization, tool discovery, identity and unauthenticated denial.
 - `.github/workflows/android.yml`: Gateway syntax and unit-test job added to the existing PR workflow.
 - `.railway/railway.ts`: Railway Infrastructure as Code declaration for a PostgreSQL database and Gateway service; it has not been applied to an account.
 - `gateway/GITHUB_APP_SETUP.md`: exact minimal GitHub App permission and secret-injection checklist.
