@@ -11,7 +11,8 @@ let endpoint;
 
 before(async () => {
   app = createMcpFastifyApp({ host: "127.0.0.1" });
-  const handler = createMcpHandler(() => {
+  const handler = createMcpHandler((ctx) => {
+    if (ctx.authInfo?.clientId !== "agent-protocol-test") throw new Error("Authenticated MCP client metadata was not forwarded");
     const server = new McpServer({ name: "yara-protocol-test", version: "0.1.0" });
     server.registerTool(
       "echo",
@@ -26,6 +27,7 @@ before(async () => {
   }, { legacy: "stateless", responseMode: "auto" });
   const nodeHandler = toNodeHandler(handler);
   app.all("/mcp", async (request, reply) => {
+    request.raw.auth = { token: "token-hash", clientId: "agent-protocol-test", scopes: ["project:read"] };
     reply.hijack();
     await nodeHandler(request.raw, reply.raw, request.body);
   });
