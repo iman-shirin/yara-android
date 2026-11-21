@@ -103,6 +103,22 @@ jobs:
   gateway-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: yara
+          POSTGRES_PASSWORD: yara_test
+          POSTGRES_DB: yara_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yara -d yara_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://yara:yara_test@localhost:5432/yara_test
     defaults:
       run:
         working-directory: gateway
