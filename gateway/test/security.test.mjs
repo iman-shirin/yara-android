@@ -42,5 +42,5 @@ test("agent write policy blocks workflow, gateway security and secret paths", ()
   assert.throws(() => assertWritablePath("gateway/src/server.mjs"), /protected_path/);
   assert.throws(() => assertWritablePath("gateway/.env.example"), /protected_path/);
   assert.throws(() => assertWritablePath("app/local.properties"), /protected_path/);
-  assert.throws(() => assertWritablePath("secrets/provider.json"), /protected_path/);
+  assert.throws(() => assertWritablePath("secrets/provider.json"), /protected_path/);\n  assert.throws(() => assertWritablePath("gateway/config/.env.production"), /protected_path/);\n  assert.throws(() => assertWritablePath(".devcontainer/setup.sh"), /protected_path/);\n  assert.throws(() => assertWritablePath(".github/actions/custom/action.yml"), /protected_path/);
 });
