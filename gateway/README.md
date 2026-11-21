@@ -61,6 +61,14 @@ The repository contains `.railway/railway.ts`, which declares a Railway PostgreS
 
 The IaC file is a desired-state declaration only. It has not been applied to a Railway account, and no database or public endpoint has been provisioned.
 
+Run the post-deployment read-only smoke test after provisioning an agent token:
+
+\`\`\`bash
+MCP_URL=https://<gateway-domain>/mcp YARA_AGENT_TOKEN=<secret> bash scripts/smoke-mcp.sh
+\`\`\`
+
+The script verifies HTTPS, MCP initialization, tool discovery, authenticated identity and unauthenticated denial. It does not create branches or write repository files.
+
 ## Deployment requirements — not yet completed
 
 1. Connect the Railway account and apply `.railway/railway.ts` after reviewing the proposed service/database resources.
