@@ -2,6 +2,19 @@
 
 This guide records which client surfaces can connect to a remote YARA MCP endpoint. A provider name is not a connected agent: mark it connected only after the identity, read, own-branch write, draft-PR and revocation checks pass.
 
+## Current connection state (2026-11-21)
+
+| Provider | Current state | Evidence / next step |
+|---|---|---|
+| ChatGPT | Existing GitHub connection is authorized with repository read/write access. | Re-test after the repository is made private; custom MCP is not available on the current Free plan. |
+| Claude | Not connected to YARA Gateway. | Waiting for Gateway deployment and a Claude-specific agent token. |
+| Gemini | Not connected to YARA Gateway. | Waiting for a selected Gemini CLI/API runtime and its agent token. |
+| Grok | Not connected to YARA Gateway. | Waiting for Grok CLI/runtime configuration and its agent token. |
+| Perplexity | Not connected to YARA Gateway. | Waiting for an eligible Perplexity plan, deployed endpoint and agent token. |
+| GitHub Copilot | Not connected to YARA Gateway. | Waiting for repository/IDE MCP configuration and a Copilot-specific token. |
+
+The Gateway is currently code-tested but not deployed. The repository is still public. Do not mark any provider as connected until the post-deployment smoke test and provider-specific read/write/revoke acceptance tests pass.
+
 ## Common prerequisites
 
 - Deploy the Gateway and expose only its HTTPS `/mcp` endpoint publicly. Keep PostgreSQL on the host's private network.
