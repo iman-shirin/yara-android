@@ -121,3 +121,5 @@ jobs:
         run: npm run check
       - name: Run Gateway security unit tests
         run: npm test
+      - name: Validate MCP deployment smoke script
+        run: bash -n scripts/smoke-mcp.sh
