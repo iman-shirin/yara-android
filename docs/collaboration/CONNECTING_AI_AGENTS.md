@@ -58,12 +58,12 @@ These are integration targets, not claims that all six are currently connected. 
 ## Agent identity and permission policy
 
 Each provider/runtime receives a distinct YARA agent identity, for example:
-- `agent.chatgpt`
-- `agent.claude`
-- `agent.gemini`
-- `agent.grok`
-- `agent.perplexity`
-- `agent.copilot`
+- `agent-chatgpt`
+- `agent-claude`
+- `agent-gemini`
+- `agent-grok`
+- `agent-perplexity`
+- `agent-copilot`
 
 Each identity has:
 - its own authentication method and revocation handle;
