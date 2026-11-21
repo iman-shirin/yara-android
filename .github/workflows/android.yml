@@ -115,6 +115,12 @@ jobs:
           node-version: '22'
       - name: Generate dependency lockfile
         run: npm install --package-lock-only --ignore-scripts
+      - name: Upload generated dependency lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: yara-gateway-package-lock
+          path: gateway/package-lock.json
+          retention-days: 1
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
       - name: Check JavaScript syntax
