@@ -218,7 +218,18 @@ Owner approval is required for:
 
 This execution plan records the owner's authorization to begin the architecture work. It does not grant agents blanket access or authorize any of the gated actions above.
 
-## 11. Current implementation evidence (2026-11-21)\n\nThe following code has been committed to the execution branch, not to `main`:\n- `gateway/src/server.mjs`: Fastify API, PostgreSQL agent registry, one-time owner bootstrap provisioning, token rotation/revocation, GitHub App JWT and short-lived installation-token exchange, repository allowlist, branch creation, file read/write, draft PR creation and audit events.\n- `gateway/src/security.mjs` and `gateway/test/security.test.mjs`: credential hashing/generation, constant-time comparison, input/path validation and agent branch isolation tests.\n- `gateway/Dockerfile`, `gateway/package.json`, `gateway/.env.example`, `gateway/README.md`: container and local deployment scaffolding.\n- `.github/workflows/android.yml`: Gateway syntax and unit-test job added to the existing PR workflow.\n- `.github/workflows/gateway.yml`: standalone Gateway workflow for after this workflow is present on the default branch.\n\n**Not yet verified:** Gateway test execution on GitHub Actions, PostgreSQL integration, real GitHub App authentication, Codespaces execution, production deployment, provider connections, repository-private transition and enforced branch protection. The current environment cannot execute the repository checkout locally, so code is not described as tested until CI reports a result for the exact PR head SHA.\n\n## 12. Status reporting format
+## 11. Current implementation evidence (2026-11-21)
+
+The following code has been committed to the execution branch, not to `main`:
+- `gateway/src/server.mjs`: Fastify API, PostgreSQL agent registry, one-time owner bootstrap provisioning, token rotation/revocation, GitHub App JWT and short-lived installation-token exchange, repository allowlist, branch creation, file read/write, draft PR creation and audit events.
+- `gateway/src/security.mjs` and `gateway/test/security.test.mjs`: credential hashing/generation, constant-time comparison, input/path validation and agent branch isolation tests.
+- `gateway/Dockerfile`, `gateway/package.json`, `gateway/.env.example`, `gateway/README.md`: container and local deployment scaffolding.
+- `.github/workflows/android.yml`: Gateway syntax and unit-test job added to the existing PR workflow.
+- `.github/workflows/gateway.yml`: standalone Gateway workflow for after this workflow is present on the default branch.
+
+**Not yet verified:** Gateway test execution on GitHub Actions, PostgreSQL integration, real GitHub App authentication, Codespaces execution, production deployment, provider connections, repository-private transition and enforced branch protection. The current environment cannot execute the repository checkout locally, so code is not described as tested until CI reports a result for the exact PR head SHA.
+
+## 12. Status reporting format
 
 Every agent contribution must include:
 - agent ID and runtime identity;
