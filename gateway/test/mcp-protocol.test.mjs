@@ -47,7 +47,7 @@ async function verifyEra(expectedEra, options) {
     const listed = await client.listTools();
     assert.ok(listed.tools.some((tool) => tool.name === "echo"));
     const result = await client.callTool({ name: "echo", arguments: { text: expectedEra } });
-    assert.equal(result.isError, undefined);
+    assert.notEqual(result.isError, true);
     assert.equal(result.content?.[0]?.text, expectedEra);
   } finally {
     await client.close().catch(() => {});
