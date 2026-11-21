@@ -91,17 +91,41 @@ Required target configuration:
 
 These settings are **not yet verified or changed**. Configure and test them before granting broad write access to external agents.
 
-## 6. Public-repository security condition
+## 6. Repository visibility and private-agent access
 
-At execution start, GitHub reported this repository as **public**. Therefore all committed source, documentation, issues, PRs and branch contents may be visible to the public.
+The repository is currently **public** (verified through GitHub repository metadata on 2026-11-21). Public visibility is not the intended long-term security posture for a project containing private architecture, internal agent reports or future operational data.
 
-Until the owner explicitly changes repository visibility:
-- commit only material intended for public disclosure;
-- never commit API keys, OAuth tokens, passwords, signing keys, personal records or private agent transcripts;
-- store credentials only in a secret manager or protected deployment secrets;
-- review generated logs and artifacts for accidental disclosure.
+### Target state: private repository behind YARA Gateway
 
-Repository visibility is an owner decision and has not been changed by this plan.
+The target architecture is a **private GitHub repository** accessed through a central YARA GitHub App installation and YARA Gateway. Making the repository private does not require every model provider to have a GitHub account or direct collaborator permission.
+
+The access path is:
+1. Install a dedicated YARA GitHub App on this repository with only the required repository permissions (Contents: read/write; Pull requests: read/write; Metadata: read; Checks/Actions: read as required).
+2. The Gateway obtains short-lived GitHub App installation tokens at runtime. Do not use or distribute the owner's personal access token.
+3. Each provider/runtime authenticates separately to YARA Gateway using its own revocable agent identity.
+4. The Gateway maps each agent identity to scoped capabilities and branch namespaces, and records all operations with agent ID, task ID and commit SHA.
+5. Providers with remote MCP support use the YARA MCP endpoint; providers without compatible MCP support use a provider-specific runtime/API adapter. A2A is used for agent task exchange where supported.
+6. All write operations target feature branches and pull requests. The Gateway rejects direct writes/merges to `main`. The owner alone approves promotion to `main`.
+
+### Required safeguards
+
+- No shared PAT or shared provider credential across agents.
+- No provider API keys, GitHub tokens, signing keys or private user data in Git, issues, PR comments or shared project memory.
+- Short-lived credentials, least privilege, per-agent revocation and audit receipts.
+- Private repository contents are exposed only to authenticated agents with explicit project membership and data-classification clearance.
+- A provider is not considered connected until an end-to-end read test, feature-branch write test, PR creation test and revocation test pass.
+
+### Current transition status
+
+- [x] Confirm current repository visibility is public.
+- [x] Confirm the connected GitHub integration can read and write the current repository.
+- [ ] Create/install a dedicated YARA GitHub App with the minimal permissions above.
+- [ ] Implement and deploy the authenticated YARA Gateway.
+- [ ] Configure provider-specific runtime adapters and obtain credentials through owner-authorized OAuth/API flows.
+- [ ] Run end-to-end read/write/revocation tests for each provider.
+- [ ] Change repository visibility to private after the Gateway's GitHub App access is installed and verified, to avoid locking out the current integrations during transition.
+
+The repository visibility change and provider account authorizations are owner-controlled operations. No visibility change or external provider authorization has been performed by this plan.
 
 ## 7. Deployment topology
 
@@ -144,15 +168,15 @@ Hosting vendor, data region, budget, identity provider and retention policy rema
 - [ ] Configure and test Main protection after owner review.
 
 ### Stage 3 — Collaboration service foundation
-- [ ] Implement authenticated service API and agent registry.
+- [ ] Implement authenticated service API and agent registry, including per-provider adapter authentication.
 - [ ] Implement durable mission/task/message persistence.
 - [ ] Implement policy checks, scoped approval requests and append-only audit events.
-- [ ] Implement GitHub adapter for branch/PR operations; block Main writes in code and policy.
+- [ ] Implement GitHub App adapter for private-repository branch/PR operations; block Main writes in code and policy.
 - [ ] Add integration, concurrency, replay, authorization and recovery tests.
 
 ### Stage 4 — Agent integrations
 - [ ] Integrate one reviewer agent first, then one implementation agent.
-- [ ] Add provider adapters one at a time using independent credentials.
+- [ ] Add provider adapters one at a time using independent credentials; expose one authenticated MCP endpoint plus API/runtime adapters for providers without MCP support.
 - [ ] Add A2A interoperability where supported and MCP tool access through the Tool Gateway.
 - [ ] Verify each agent's read/write scope and revocation independently.
 - [ ] Expand to remaining agents only after passing the same acceptance suite.
