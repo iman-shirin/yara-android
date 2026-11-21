@@ -2,7 +2,7 @@
 * @iman-shirin
 
 # Explicitly protect governance, security, CI and deployment configuration.
- /AGENTS.md @iman-shirin
+/AGENTS.md @iman-shirin
 /YARA_COLLABORATION_HUB_PLAN.md @iman-shirin
 /.github/ @iman-shirin
 /.devcontainer/ @iman-shirin
