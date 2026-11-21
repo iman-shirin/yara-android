@@ -10,12 +10,13 @@ This is an initial, self-hostable collaboration gateway. It is **not production-
 - Owner bootstrap endpoint for provisioning and revoking agents.
 - GitHub App JWT exchange for short-lived installation tokens.
 - Repository file reads, scoped feature-branch writes and draft PR creation.
+- PostgreSQL-backed task queue with atomic claims, three-minute renewable leases, retry/recovery after worker loss, completion results and durable direct/broadcast agent messages.
 - Hard rejection of writes outside `agents/{agent-id}/...`; `main` and `master` are always denied.
 - Request size limits, path validation, redacted authorization headers and health endpoint.
 
 ## API and MCP
 
-The `/mcp` endpoint uses the official MCP TypeScript SDK v2. It serves the modern 2026-07-28 protocol (server/discover and per-request envelopes) and the legacy 2025-era initialize handshake through one tool registry. It uses Streamable HTTP and the authenticated agent bearer token. Available tools: `yara_identity`, `yara_read_file`, `yara_create_branch`, `yara_write_file` and `yara_create_draft_pr`. It exposes no merge or main-branch write operation. Use the HTTPS URL `https://<gateway-host>/mcp` after deployment; do not configure a provider against an unencrypted endpoint.
+The `/mcp` endpoint uses the official MCP TypeScript SDK v2. It serves the modern 2026-07-28 protocol (server/discover and per-request envelopes) and the legacy 2025-era initialize handshake through one tool registry. It uses Streamable HTTP and the authenticated agent bearer token. Available tools: `yara_identity`, `yara_read_file`, `yara_create_branch`, `yara_write_file`, `yara_create_draft_pr`, `yara_task_create`, `yara_tasks_list`, `yara_task_claim`, `yara_task_heartbeat`, `yara_task_complete`, `yara_message_send` and `yara_message_inbox`. It exposes no merge or main-branch write operation. Use the HTTPS URL `https://<gateway-host>/mcp` after deployment; do not configure a provider against an unencrypted endpoint.
 
 All agent REST and MCP endpoints require `Authorization: Bearer <agent-token>`.
 
@@ -31,6 +32,15 @@ All agent REST and MCP endpoints require `Authorization: Bearer <agent-token>`.
 | GET | `/v1/projects/{owner}/{repo}/files?path=...` | Read a repository file |
 | PUT | `/v1/projects/{owner}/{repo}/files` | Create/update a file on the agent's own branch |
 | POST | `/v1/projects/{owner}/{repo}/pull-requests` | Open a draft PR from the agent's own branch to main |
+| POST | `/v1/tasks` | Create a durable task; optionally assign it to an active agent |
+| GET | `/v1/tasks` | List tasks visible to the authenticated agent |
+| POST | `/v1/tasks/claim` | Atomically claim the next queued task with a three-minute lease |
+| POST | `/v1/tasks/{id}/heartbeat` | Renew a running task lease |
+| POST | `/v1/tasks/{id}/complete` | Submit result or failure; failed work is re-queued within its retry budget |
+| POST | `/v1/messages` | Send a durable direct or broadcast message |
+| GET | `/v1/messages/inbox` | Read direct and broadcast messages |
+| POST | `/v1/messages/{id}/ack` | Acknowledge a delivered message |
+| GET | `/v1/tasks/{id}/messages` | Read messages associated with a task |
 
 Provision an agent using the owner bootstrap credential:
 
@@ -87,7 +97,7 @@ The script uses the official SDK v2 client to negotiate both modern and legacy p
 - Audit rows are protected from UPDATE/DELETE by a database trigger, but production should also use a separate database role that has INSERT/SELECT only on the audit table and export events to an independently controlled immutable log sink.
 - Rate limiting, per-agent quotas, request signing, outbound egress allowlists, secret rotation automation and formal threat-model review remain required.
 - GitHub App credentials, provider API keys and database passwords must never be stored in Git, Android assets, issue comments or model prompts.
-- The service does not itself run model inference or keep provider agents alive. Each provider still needs its own supported runtime/connector and owner-authorized credentials.
+- The task/message layer is durable, but it currently uses agent polling/claiming rather than a push websocket or provider-specific always-on worker. The service does not itself run model inference or keep provider agents alive. Each provider still needs its own supported runtime/connector and owner-authorized credentials. A worker should poll `yara_tasks_list`/`yara_task_claim`, heartbeat while working, submit `yara_task_complete`, and check `yara_message_inbox`; expired leases are re-queued automatically when another worker claims work.
 
 ## Validation
 
