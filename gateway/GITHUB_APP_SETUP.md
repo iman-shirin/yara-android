@@ -35,7 +35,7 @@ After creating the App:
 
 The `.railway/railway.ts` file declares the Railway Gateway and PostgreSQL resources, links the database URL, and preserves the secret variables below. Apply it only after connecting the Railway account and reviewing the infrastructure plan. Then set these secrets on the Gateway service:
 
-- `DATABASE_URL`: private PostgreSQL connection URL, TLS required.
+- `DATABASE_URL`: private PostgreSQL connection URL from the Railway database service; keep it on the private project network.
 - `YARA_BOOTSTRAP_TOKEN`: cryptographically random secret, at least 32 characters; store only in the host secret manager.
 - `GITHUB_APP_ID`: App ID from the App settings.
 - `GITHUB_INSTALLATION_ID`: installation ID for this repository.
