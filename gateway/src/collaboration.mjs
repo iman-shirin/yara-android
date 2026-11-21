@@ -18,12 +18,14 @@ export function validateMessagePayload(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, error: "invalid_message" };
   if (body.recipientId !== null && body.recipientId !== undefined &&
       (typeof body.recipientId !== "string" || !/^[a-z][a-z0-9-]{1,47}$/.test(body.recipientId))) return { ok: false, error: "invalid_recipient" };
+  if (body.taskId !== undefined && body.taskId !== null &&
+      (typeof body.taskId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.taskId))) return { ok: false, error: "invalid_task_id" };
   const kind = body.kind ?? "message";
   if (!MESSAGE_KINDS.has(kind)) return { ok: false, error: "invalid_message_kind" };
   if (body.idempotencyKey !== undefined && body.idempotencyKey !== null &&
       (typeof body.idempotencyKey !== "string" || body.idempotencyKey.length > 128)) return { ok: false, error: "invalid_idempotency_key" };
   if (body.body === undefined || Buffer.byteLength(JSON.stringify(body.body), "utf8") > 50000) return { ok: false, error: "invalid_message_body" };
-  return { ok: true, value: { recipientId: body.recipientId ?? null, kind, body: body.body, idempotencyKey: body.idempotencyKey ?? null } };
+  return { ok: true, value: { recipientId: body.recipientId ?? null, taskId: body.taskId ?? null, kind, body: body.body, idempotencyKey: body.idempotencyKey ?? null } };
 }
 
 export async function migrateCollaboration(pool) {
@@ -161,16 +163,21 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
   app.post("/v1/messages", { preHandler: authenticate }, async (request, reply) => {
     const parsed = validateMessagePayload(request.body);
     if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
-    const { recipientId, kind, body, idempotencyKey } = parsed.value;
+    const { recipientId, taskId, kind, body, idempotencyKey } = parsed.value;
     if (recipientId) {
       const exists = await pool.query("SELECT id FROM yara_agents WHERE id=$1 AND active=true", [recipientId]);
       if (!exists.rowCount) return reply.code(404).send({ error: "recipient_not_found" });
     }
+    if (taskId) {
+      const task = await pool.query("SELECT created_by,assigned_to FROM yara_tasks WHERE id=$1", [taskId]);
+      const participants = task.rowCount ? [task.rows[0].created_by, task.rows[0].assigned_to].filter(Boolean) : [];
+      if (!participants.includes(request.agent.id) || (recipientId && !participants.includes(recipientId))) return reply.code(404).send({ error: "task_not_found" });
+    }
     if (idempotencyKey && (typeof idempotencyKey !== "string" || idempotencyKey.length > 128)) return reply.code(400).send({ error: "invalid_idempotency_key" });
     const id = randomUUID();
     const inserted = await pool.query(
-      "INSERT INTO yara_messages(id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (sender_id,idempotency_key) DO NOTHING RETURNING *",
-      [id, request.agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
+      "INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (sender_id,idempotency_key) DO NOTHING RETURNING *",
+      [id, taskId, request.agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
     );
     if (!inserted.rowCount) return reply.code(409).send({ error: "duplicate_message" });
     await audit(request.agent.id, "message.send", recipientId ?? "broadcast", "success", request.id, { messageId: id });
