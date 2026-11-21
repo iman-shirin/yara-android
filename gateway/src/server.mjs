@@ -190,6 +190,26 @@ async function callMcpTool(agent, name, args, requestId) {
     } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
     finally { client.release(); }
   }
+  if (name === "yara_tasks_list") {
+    const state = args.status;
+    if (state && !["queued","running","completed","failed","cancelled"].includes(state)) throw new Error("invalid_status");
+    const values = [agent.id];
+    let filter = "(created_by=$1 OR assigned_to=$1 OR (assigned_to IS NULL AND status='queued'))";
+    if (state) { values.push(state); filter += " AND status=$2"; }
+    const result = await pool.query(
+      `SELECT id,title,description,created_by,assigned_to,status,attempts,max_attempts,lease_until,result,created_at,updated_at,completed_at FROM yara_tasks WHERE ${filter} ORDER BY created_at DESC LIMIT 100`,
+      values
+    );
+    return { tasks: result.rows };
+  }
+  if (name === "yara_task_heartbeat") {
+    const result = await pool.query(
+      "UPDATE yara_tasks SET lease_until=now()+interval '3 minutes',updated_at=now() WHERE id=$1 AND assigned_to=$2 AND status='running' RETURNING id,lease_until",
+      [args.taskId, agent.id]
+    );
+    if (!result.rowCount) throw new Error("active_task_not_found");
+    return result.rows[0];
+  }
   if (name === "yara_task_complete") {
     const outcome = args.outcome ?? "completed";
     if (!["completed", "failed"].includes(outcome)) throw new Error("invalid_outcome");
@@ -328,6 +348,16 @@ const mcpHandler = createMcpHandler((ctx) => {
     description: "Claim the next queued task for this authenticated agent. A lease is created and must be heartbeated through REST if work is long-running.",
     annotations: { readOnlyHint: false, destructiveHint: false },
     inputSchema: z.object({}).strict()
+  });
+  register("yara_tasks_list", {
+    description: "List tasks created by, assigned to, or available to this authenticated agent.",
+    annotations: { readOnlyHint: true },
+    inputSchema: z.object({ status: z.enum(["queued","running","completed","failed","cancelled"]).optional() }).strict()
+  });
+  register("yara_task_heartbeat", {
+    description: "Extend the three-minute lease for a running task assigned to this agent.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({ taskId: z.string().uuid() }).strict()
   });
   register("yara_task_complete", {
     description: "Submit a result or failure for a task assigned to this authenticated agent.",
