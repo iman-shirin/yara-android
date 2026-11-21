@@ -102,6 +102,25 @@ if (!databaseUrl) {
     assert.equal(failed.json().retryScheduled, true);
     assert.equal(failed.json().task.status, "queued");
     assert.equal(failed.json().task.assigned_to, null);
+
+    const finalClaim = await call("POST", "/v1/tasks/claim", "agent-test-a");
+    assert.equal(finalClaim.json().task.id, retryId);
+    const exhausted = await call("POST", `/v1/tasks/${retryId}/complete`, "agent-test-a", {
+      outcome: "failed", result: { error: "attempt budget exhausted" }
+    });
+    assert.equal(exhausted.json().task.status, "failed");
+    assert.equal(exhausted.json().retryScheduled, false);
+
+    const concurrentTask = await call("POST", "/v1/tasks", "agent-test-a", {
+      title: "Concurrent claim", description: "Only one worker may claim this task."
+    });
+    const concurrentId = concurrentTask.json().task.id;
+    const claims = await Promise.all([
+      call("POST", "/v1/tasks/claim", "agent-test-a"),
+      call("POST", "/v1/tasks/claim", "agent-test-b")
+    ]);
+    assert.equal(claims.filter((response) => response.statusCode === 200 && response.json().task?.id === concurrentId).length, 1);
+    assert.equal(claims.filter((response) => response.statusCode === 204).length, 1);
   });
 
   test("direct and broadcast messages are durable and acknowledgeable", async () => {
