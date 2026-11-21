@@ -26,7 +26,7 @@ All agent REST and MCP endpoints require `Authorization: Bearer <agent-token>`.
 | POST | `/v1/admin/agents/{id}/rotate` | Rotate an agent credential; old token stops working |
 | POST | `/v1/admin/agents/{id}/revoke` | Owner bootstrap: revoke an agent |
 | POST | `/v1/projects/{owner}/{repo}/branches` | Create an agent-scoped branch from main |
-| POST | `/mcp` | Stateless MCP endpoint for the tools listed above |
+| GET/POST/DELETE | `/mcp` | MCP Streamable HTTP endpoint for modern and legacy clients |
 | GET | `/v1/agents/me` | Return authenticated agent identity |
 | GET | `/v1/projects/{owner}/{repo}/files?path=...` | Read a repository file |
 | PUT | `/v1/projects/{owner}/{repo}/files` | Create/update a file on the agent's own branch |
