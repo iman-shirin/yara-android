@@ -62,6 +62,7 @@ export function assertWritablePath(path) {
     ".gitmodules",
     "gateway/src/server.mjs",
     "gateway/src/security.mjs",
+    "gateway/scripts/",
     "gateway/package.json",
     "gateway/package-lock.json",
     "gateway/dockerfile",
