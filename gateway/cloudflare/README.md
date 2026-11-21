@@ -45,4 +45,4 @@ Before cutover, test modern MCP discovery/calls and legacy stateless initializat
 - Migration branch created from PR #23 head.
 - No Cloudflare account was inspected or connected.
 - No Cloudflare resources were created and no deployment was run.
-- Worker implementation and automated validation remain in progress.
+- Worker implementation and static validation are complete on this branch; GitHub Actions run #22 passed (7 unit tests, D1 local migration, dependency audit, Wrangler dry-run build).
