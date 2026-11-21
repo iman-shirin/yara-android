@@ -241,16 +241,21 @@ async function callMcpTool(agent, name, args, requestId) {
   if (name === "yara_message_send") {
     const parsed = validateMessagePayload(args);
     if (!parsed.ok) throw new Error(parsed.error);
-    const { recipientId, kind, body, idempotencyKey } = parsed.value;
+    const { recipientId, taskId, kind, body, idempotencyKey } = parsed.value;
     if (recipientId) {
       const exists = await pool.query("SELECT id FROM yara_agents WHERE id=$1 AND active=true", [recipientId]);
       if (!exists.rowCount) throw new Error("recipient_not_found");
     }
+    if (taskId) {
+      const task = await pool.query("SELECT created_by,assigned_to FROM yara_tasks WHERE id=$1", [taskId]);
+      const participants = task.rowCount ? [task.rows[0].created_by, task.rows[0].assigned_to].filter(Boolean) : [];
+      if (!participants.includes(agent.id) || (recipientId && !participants.includes(recipientId))) throw new Error("task_not_found");
+    }
     if (idempotencyKey && (typeof idempotencyKey !== "string" || idempotencyKey.length > 128)) throw new Error("invalid_idempotency_key");
     const { randomUUID } = await import("node:crypto");
     const inserted = await pool.query(
-      "INSERT INTO yara_messages(id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (sender_id,idempotency_key) DO NOTHING RETURNING *",
-      [randomUUID(), agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
+      "INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (sender_id,idempotency_key) DO NOTHING RETURNING *",
+      [randomUUID(), taskId, agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
     );
     if (!inserted.rowCount) throw new Error("duplicate_message");
     await audit(agent.id, "message.send", recipientId ?? "broadcast", "success", requestId, { messageId: inserted.rows[0].id });
@@ -385,6 +390,7 @@ const mcpHandler = createMcpHandler((ctx) => {
     annotations: { readOnlyHint: false, destructiveHint: false },
     inputSchema: z.object({
       recipientId: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/).nullable().optional(),
+      taskId: z.string().uuid().optional(),
       kind: z.enum(["message", "task_update", "result", "request"]).optional(),
       body: z.unknown(),
       idempotencyKey: z.string().max(128).optional()
