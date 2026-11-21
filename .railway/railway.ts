@@ -17,6 +17,7 @@ export default defineRailway(() => {
       GITHUB_INSTALLATION_ID: preserve(),
       GITHUB_APP_PRIVATE_KEY_BASE64: preserve(),
       GITHUB_REPOSITORY: "iman-shirin/yara-android",
+      GATEWAY_ALLOWED_HOSTS: preserve(),
       PGSSLMODE: "disable",
       NODE_ENV: "production",
     },
