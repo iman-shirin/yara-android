@@ -207,6 +207,7 @@ app.post("/v1/admin/agents/:id/revoke", async (request, reply) => {
 
 app.post("/v1/projects/:owner/:repo/branches", { preHandler: authenticate }, async (request, reply) => {
   const { owner, repo } = request.params;
+  if (`${owner}/${repo}` !== env.GITHUB_REPOSITORY) return reply.code(403).send({ error: "repository_not_allowed" });
   const { name } = request.body ?? {};
   if (!validRepoPart(owner) || !validRepoPart(repo) || typeof name !== "string" ||
       !/^[a-z0-9][a-z0-9-]{1,79}$/.test(name)) {
@@ -272,6 +273,7 @@ app.put("/v1/projects/:owner/:repo/files", { preHandler: authenticate }, async (
 
 app.post("/v1/projects/:owner/:repo/pull-requests", { preHandler: authenticate }, async (request, reply) => {
   const { owner, repo } = request.params;
+  if (`${owner}/${repo}` !== env.GITHUB_REPOSITORY) return reply.code(403).send({ error: "repository_not_allowed" });
   const { head, title, body = "", base = "main" } = request.body ?? {};
   if (!validRepoPart(owner) || !validRepoPart(repo) || typeof title !== "string" || title.trim().length < 1 || title.length > 200 ||
       typeof body !== "string" || body.length > 10000 || base !== "main") {
