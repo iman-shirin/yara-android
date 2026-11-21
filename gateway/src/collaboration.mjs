@@ -168,17 +168,13 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     }
     if (idempotencyKey && (typeof idempotencyKey !== "string" || idempotencyKey.length > 128)) return reply.code(400).send({ error: "invalid_idempotency_key" });
     const id = randomUUID();
-    try {
-      const inserted = await pool.query(
-        "INSERT INTO yara_messages(id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",
-        [id, request.agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
-      );
-      await audit(request.agent.id, "message.send", recipientId ?? "broadcast", "success", request.id, { messageId: id });
-      return reply.code(201).send({ message: inserted.rows[0] });
-    } catch (error) {
-      if (error.code === "23505" && idempotencyKey) return reply.code(409).send({ error: "duplicate_message" });
-      throw error;
-    }
+    const inserted = await pool.query(
+      "INSERT INTO yara_messages(id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (sender_id,idempotency_key) DO NOTHING RETURNING *",
+      [id, request.agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
+    );
+    if (!inserted.rowCount) return reply.code(409).send({ error: "duplicate_message" });
+    await audit(request.agent.id, "message.send", recipientId ?? "broadcast", "success", request.id, { messageId: id });
+    return reply.code(201).send({ message: inserted.rows[0] });
   });
 
   app.get("/v1/messages/inbox", { preHandler: authenticate }, async (request) => {
