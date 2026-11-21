@@ -41,5 +41,7 @@ jobs:
         run: npm test
       - name: Apply D1 migrations to local database
         run: npx wrangler d1 migrations apply yara-collaboration --local
+      - name: Exercise Worker REST routes against local D1
+        run: npm run smoke
       - name: Build Worker without deploying
         run: npx wrangler deploy --dry-run
