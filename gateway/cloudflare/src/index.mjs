@@ -35,8 +35,7 @@ let cachedInstallationTokenExpiresAt = 0;
 async function githubToken(env) {
   const keys = ['GITHUB_APP_ID','GITHUB_INSTALLATION_ID','GITHUB_APP_PRIVATE_KEY_BASE64'];
   const present = keys.filter((key) => Boolean(env[key]));
-  if (present.length === 0) throw new Error('github_app_not_configured');
-  if (present.length !== keys.length) throw new Error('github_app_not_configured');
+  if (present.length === 0 || present.length !== keys.length) throw Object.assign(new Error('github_app_not_configured'), { status:503 });
   if (cachedInstallationToken && Date.now() < cachedInstallationTokenExpiresAt - 60000) return cachedInstallationToken;
   const pem = new TextDecoder().decode(decodeBase64(env.GITHUB_APP_PRIVATE_KEY_BASE64)).replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
   const der = decodeBase64(pem);
@@ -302,7 +301,8 @@ export default {
       return await handleApi(request,env,ctx);
     } catch(error) {
       const status=Number.isInteger(error.status)?error.status:500;
-      return json({error:status>=500?'internal_error':error.message},status);
+      const code=error.message==='github_app_not_configured'?'github_app_not_configured':status>=500?'internal_error':error.message;
+      return json({error:code},status);
     }
   }
 };
