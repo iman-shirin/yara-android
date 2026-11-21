@@ -80,9 +80,9 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     return reply.code(201).send({ task: result.rows[0] });
   });
 
-  app.get("/v1/tasks", { preHandler: authenticate }, async (request) => {
+  app.get("/v1/tasks", { preHandler: authenticate }, async (request, reply) => {
     const state = request.query.status;
-    if (state && !TASK_STATES.has(state)) return { error: "invalid_status" };
+    if (state && !TASK_STATES.has(state)) return reply.code(400).send({ error: "invalid_status" });
     const values = [request.agent.id];
     let filter = "(created_by=$1 OR assigned_to=$1 OR (assigned_to IS NULL AND status='queued'))";
     if (state) { values.push(state); filter += " AND status=$2"; }
