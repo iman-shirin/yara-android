@@ -10,6 +10,8 @@ const uuid = () => crypto.randomUUID();
 const parseJson = async (request) => { try { return await request.json(); } catch { throw Object.assign(new Error('invalid_json'), { status:400 }); } };
 const asJson = (value) => JSON.stringify(value ?? {});
 const getRow = async (stmt) => stmt.first();
+const normalizeTask = (row) => row ? { ...row, result: typeof row.result === 'string' ? JSON.parse(row.result) : row.result } : row;
+const normalizeMessage = (row) => row ? { ...row, body: typeof row.body === 'string' ? JSON.parse(row.body) : row.body } : row;
 
 async function audit(env, agentId, action, resource, outcome, requestId, details = {}) {
   await env.DB.prepare('INSERT INTO yara_audit(agent_id,action,resource,outcome,request_id,details) VALUES(?,?,?,?,?,?)')
@@ -76,13 +78,13 @@ async function callTool(env, agent, name, args, requestId) {
     const id = uuid();
     await db.prepare('INSERT INTO yara_tasks(id,title,description,created_by,assigned_to,max_attempts) VALUES(?,?,?,?,?,?)').bind(id,v.title,v.description,agent.id,v.assignedTo,v.maxAttempts).run();
     await audit(env,agent.id,'task.create',id,'success',requestId,{ assignedTo:v.assignedTo });
-    return { task:await getRow(db.prepare('SELECT * FROM yara_tasks WHERE id=?').bind(id)) };
+    return { task:normalizeTask(await getRow(db.prepare('SELECT * FROM yara_tasks WHERE id=?').bind(id))) };
   }
   if (name === 'yara_tasks_list') {
     const state = args.status; if (state && !['queued','running','completed','failed','cancelled'].includes(state)) throw new Error('invalid_status');
     const sql = 'SELECT id,title,description,created_by,assigned_to,status,attempts,max_attempts,lease_until,result,created_at,updated_at,completed_at FROM yara_tasks WHERE (created_by=? OR assigned_to=? OR (assigned_to IS NULL AND status=\'queued\'))' + (state ? ' AND status=?' : '') + ' ORDER BY created_at DESC LIMIT 100';
     const query = state ? db.prepare(sql).bind(agent.id,agent.id,state) : db.prepare(sql).bind(agent.id,agent.id);
-    return { tasks:(await query.all()).results };
+    return { tasks:(await query.all()).results.map(normalizeTask) };
   }
   if (name === 'yara_task_claim') {
     const stamp = nowIso(), lease = new Date(Date.now()+180000).toISOString();
@@ -93,7 +95,7 @@ async function callTool(env, agent, name, args, requestId) {
     ]);
     const task = batch[2].results?.[0] ?? null;
     if (task) await audit(env,agent.id,'task.claim',task.id,'success',requestId,{ attempt:task.attempts });
-    return { task };
+    return { task:normalizeTask(task) };
   }
   if (name === 'yara_task_heartbeat') {
     const lease = new Date(Date.now()+180000).toISOString();
@@ -114,7 +116,7 @@ async function callTool(env, agent, name, args, requestId) {
     ]);
     if (!batch[0].results?.length) throw new Error('active_task_not_found');
     await audit(env,agent.id,'task.complete',args.taskId,'success',requestId,{ status });
-    return { task:await getRow(db.prepare('SELECT * FROM yara_tasks WHERE id=?').bind(args.taskId)), retryScheduled:retry };
+    return { task:normalizeTask(await getRow(db.prepare('SELECT * FROM yara_tasks WHERE id=?').bind(args.taskId))), retryScheduled:retry };
   }
   if (name === 'yara_message_send') {
     const parsed = validateMessagePayload(args); if (!parsed.ok) throw new Error(parsed.error); const v=parsed.value;
@@ -127,12 +129,12 @@ async function callTool(env, agent, name, args, requestId) {
     const id=uuid();
     const inserted=await db.prepare('INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body,idempotency_key) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sender_id,idempotency_key) DO NOTHING RETURNING *').bind(id,v.taskId,agent.id,v.recipientId,v.kind,asJson(v.body),v.idempotencyKey).first();
     if (!inserted) throw new Error('duplicate_message');
-    await audit(env,agent.id,'message.send',v.recipientId ?? 'broadcast','success',requestId,{ messageId:id }); return { message:inserted };
+    await audit(env,agent.id,'message.send',v.recipientId ?? 'broadcast','success',requestId,{ messageId:id }); return { message:normalizeMessage(inserted) };
   }
   if (name === 'yara_message_inbox') {
     const since=args.since ?? null;
     const rows=await db.prepare('SELECT id,task_id,sender_id,recipient_id,kind,body,created_at,read_at FROM yara_messages WHERE (recipient_id=? OR recipient_id IS NULL) AND (? IS NULL OR created_at>?) ORDER BY created_at ASC LIMIT 100').bind(agent.id,since,since).all();
-    return { messages:rows.results.map((row)=>({...row,body:JSON.parse(row.body)})) };
+    return { messages:rows.results.map(normalizeMessage) };
   }
   if (name === 'yara_message_ack') {
     const row=await db.prepare('UPDATE yara_messages SET read_at=? WHERE id=? AND (recipient_id=? OR recipient_id IS NULL) RETURNING id,read_at').bind(nowIso(),args.messageId,agent.id).first();
@@ -262,12 +264,12 @@ async function handleApi(request, env, ctx) {
     const body=await parseJson(request), parsed=validateTaskPayload(body); if (!parsed.ok) return err(parsed.error,400); const v=parsed.value;
     if (v.assignedTo&&!(await getRow(env.DB.prepare('SELECT id FROM yara_agents WHERE id=? AND active=1').bind(v.assignedTo)))) return err('assignee_not_found',404);
     const id=uuid(); await env.DB.prepare('INSERT INTO yara_tasks(id,title,description,created_by,assigned_to,max_attempts) VALUES(?,?,?,?,?,?)').bind(id,v.title,v.description,agent.id,v.assignedTo,v.maxAttempts).run();
-    await audit(env,agent.id,'task.create',id,'success',requestId,{assignedTo:v.assignedTo}); return json({task:await getRow(env.DB.prepare('SELECT * FROM yara_tasks WHERE id=?').bind(id))},201);
+    await audit(env,agent.id,'task.create',id,'success',requestId,{assignedTo:v.assignedTo}); return json({task:normalizeTask(await getRow(env.DB.prepare('SELECT * FROM yara_tasks WHERE id=?').bind(id)))},201);
   }
   if (path==='/v1/tasks'&&method==='GET') {
     const state=url.searchParams.get('status'); if (state&&!['queued','running','completed','failed','cancelled'].includes(state)) return err('invalid_status',400);
     const sql='SELECT id,title,description,created_by,assigned_to,status,attempts,max_attempts,lease_until,result,created_at,updated_at,completed_at FROM yara_tasks WHERE (created_by=? OR assigned_to=? OR (assigned_to IS NULL AND status=\'queued\'))'+(state?' AND status=?':'')+' ORDER BY created_at DESC LIMIT 100';
-    const q=state?env.DB.prepare(sql).bind(agent.id,agent.id,state):env.DB.prepare(sql).bind(agent.id,agent.id); return json({tasks:(await q.all()).results});
+    const q=state?env.DB.prepare(sql).bind(agent.id,agent.id,state):env.DB.prepare(sql).bind(agent.id,agent.id); return json({tasks:(await q.all()).results.map(normalizeTask)});
   }
   if (path==='/v1/tasks/claim'&&method==='POST') { const result=await callTool(env,agent,'yara_task_claim',{},requestId); return json(result); }
   const heartbeat=path.match(/^\/v1\/tasks\/([0-9a-f-]+)\/heartbeat$/);
@@ -279,7 +281,7 @@ async function handleApi(request, env, ctx) {
   const ack=path.match(/^\/v1\/messages\/([0-9a-f-]+)\/ack$/);
   if (ack&&method==='POST') { return json(await callTool(env,agent,'yara_message_ack',{messageId:ack[1]},requestId)); }
   const taskMessages=path.match(/^\/v1\/tasks\/([0-9a-f-]+)\/messages$/);
-  if (taskMessages&&method==='GET') { const task=await getRow(env.DB.prepare('SELECT created_by,assigned_to FROM yara_tasks WHERE id=?').bind(taskMessages[1])); if(!task||![task.created_by,task.assigned_to].includes(agent.id)) return err('task_not_found',404); const rows=await env.DB.prepare('SELECT * FROM yara_messages WHERE task_id=? ORDER BY created_at ASC LIMIT 100').bind(taskMessages[1]).all(); return json({messages:rows.results.map(r=>({...r,body:JSON.parse(r.body)}))}); }
+  if (taskMessages&&method==='GET') { const task=await getRow(env.DB.prepare('SELECT created_by,assigned_to FROM yara_tasks WHERE id=?').bind(taskMessages[1])); if(!task||![task.created_by,task.assigned_to].includes(agent.id)) return err('task_not_found',404); const rows=await env.DB.prepare('SELECT * FROM yara_messages WHERE task_id=? ORDER BY created_at ASC LIMIT 100').bind(taskMessages[1]).all(); return json({messages:rows.results.map(normalizeMessage)}); }
   return err('not_found',404);
 }
 
