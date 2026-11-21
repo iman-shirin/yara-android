@@ -57,7 +57,9 @@ Before making the repository private, run all of the following through the deplo
 - Revoke the test agent and confirm its token no longer works.
 - Confirm the audit records identify the correct agent and commit SHA.
 
-The current Railway configuration uses the `gateway` directory as the service root and its Dockerfile. Railway's current TypeScript Infrastructure as Code format is used rather than the deprecated `railway.json` Config-as-Code format.\n\nThe GitHub App's write permission is repository-wide. Branch and protected-path isolation is enforced by the Gateway, so a GitHub branch ruleset that blocks direct writes and requires owner review is still mandatory. Do not grant any App bypass in that ruleset.
+The current Railway configuration uses the `gateway` directory as the service root and its Dockerfile. Railway's current TypeScript Infrastructure as Code format is used rather than the deprecated `railway.json` Config-as-Code format.
+
+The GitHub App's write permission is repository-wide. Branch and protected-path isolation is enforced by the Gateway, so a GitHub branch ruleset that blocks direct writes and requires owner review is still mandatory. Do not grant any App bypass in that ruleset.
 
 ## Private repository transition
 
