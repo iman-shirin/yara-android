@@ -184,6 +184,30 @@ app.post("/v1/admin/agents/:id/revoke", async (request, reply) => {
   return result.rowCount ? reply.send({ id: request.params.id, revoked: true }) : reply.code(404).send({ error: "agent_not_found" });
 });
 
+app.post("/v1/projects/:owner/:repo/branches", { preHandler: authenticate }, async (request, reply) => {
+  const { owner, repo } = request.params;
+  const { name } = request.body ?? {};
+  if (!validRepoPart(owner) || !validRepoPart(repo) || typeof name !== "string" ||
+      !/^[a-z0-9][a-z0-9-]{1,79}$/.test(name)) {
+    return reply.code(400).send({ error: "invalid_branch_name" });
+  }
+  const branch = `agents/${request.agent.id}/${name}`;
+  try {
+    assertAgentBranch(request.agent.id, branch);
+  } catch (error) {
+    return reply.code(403).send({ error: error.message });
+  }
+  const base = await githubRequest(`/repos/${owner}/${repo}/git/ref/heads/main`);
+  const created = await githubRequest(`/repos/${owner}/${repo}/git/refs`, {
+    method: "POST",
+    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: base.object.sha })
+  });
+  await audit(request.agent.id, "branch.create", `${owner}/${repo}/${branch}`, "success", request.id, {
+    base: "main", baseSha: base.object.sha, commitSha: created.object.sha
+  });
+  return reply.code(201).send({ branch, base: "main", commitSha: created.object.sha });
+});
+
 app.get("/v1/agents/me", { preHandler: authenticate }, async (request) => {
   await audit(request.agent.id, "agent.identity.read", request.agent.id, "success", request.id);
   return { id: request.agent.id, displayName: request.agent.display_name, status: "active" };
