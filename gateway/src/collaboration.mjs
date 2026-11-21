@@ -95,6 +95,8 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      await client.query("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=now(),updated_at=now() WHERE status='running' AND lease_until < now() AND attempts >= max_attempts");
+      await client.query("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempts < max_attempts");
       const selected = await client.query(
         "SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=$1) AND attempts < max_attempts ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         [request.agent.id]
