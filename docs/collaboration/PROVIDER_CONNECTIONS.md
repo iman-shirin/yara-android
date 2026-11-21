@@ -10,7 +10,7 @@ This guide records which client surfaces can connect to a remote YARA MCP endpoi
 - Use a different token for every provider and revoke it independently.
 - Enable only the tools required by the client. Keep branch and protected-path restrictions active.
 
-The current MCP server is stateless Streamable HTTP over JSON-RPC and uses a fixed `Authorization: Bearer ...` request header. It does not implement OAuth authorization-code flows.
+The Gateway uses the official MCP TypeScript SDK v2 and negotiates the modern 2026-07-28 protocol or falls back to the legacy 2025-era handshake. It uses Streamable HTTP and a fixed `Authorization: Bearer ...` request header. It does not implement OAuth authorization-code flows. See the [official protocol-era guide](https://ts.sdk.modelcontextprotocol.io/v2/protocol-versions.html).
 
 ## Claude (claude.ai, Claude Desktop, Cowork, Claude Code)
 
