@@ -13,12 +13,12 @@ This guide records which client surfaces can connect to a remote YARA MCP endpoi
 | Perplexity | Not connected to YARA Gateway. | Waiting for an eligible Perplexity plan, deployed endpoint and agent token. |
 | GitHub Copilot | Not connected to YARA Gateway. | Waiting for repository/IDE MCP configuration and a Copilot-specific token. |
 
-The Gateway is currently code-tested but not deployed. The repository is still public. Do not mark any provider as connected until the post-deployment smoke test and provider-specific read/write/revoke acceptance tests pass.
+The Gateway task/message implementation is code-tested, including PostgreSQL integration tests, but it is not deployed. The repository is still public. Do not mark any provider as connected until the post-deployment smoke test and provider-specific task round-trip, read/write and revoke acceptance tests pass.
 
 ## Common prerequisites
 
 - Deploy the Gateway and expose only its HTTPS `/mcp` endpoint publicly. Keep PostgreSQL on the host's private network.
-- Provision one YARA agent identity per provider runtime using the owner bootstrap endpoint.
+- Provision one YARA agent identity per provider runtime using the owner bootstrap endpoint. Each runtime must poll/claim tasks, heartbeat while working, submit a result, and read/ack its inbox messages.
 - Store each bearer token in that provider's secret/header store. Never paste it into a prompt, source file, issue, PR or shared chat.
 - Use a different token for every provider and revoke it independently.
 - Enable only the tools required by the client. Keep branch and protected-path restrictions active.
@@ -86,7 +86,15 @@ Example configuration (store the token in the supported Copilot secret store; do
         "yara_read_file",
         "yara_create_branch",
         "yara_write_file",
-        "yara_create_draft_pr"
+        "yara_create_draft_pr",
+        "yara_task_create",
+        "yara_tasks_list",
+        "yara_task_claim",
+        "yara_task_heartbeat",
+        "yara_task_complete",
+        "yara_message_send",
+        "yara_message_inbox",
+        "yara_message_ack"
       ]
     }
   }
@@ -107,5 +115,7 @@ A separate OpenAI API runtime can call remote MCP through the Responses API, but
 
 - This Gateway provides authenticated repository identity/read, agent-scoped branch creation, protected-path-aware file writes and draft PR creation.
 - It has no merge endpoint and rejects writes to `main`, another agent's branch and protected configuration/secrets paths.
-- Durable mission/task/message storage and A2A agent-to-agent task exchange are not implemented yet. MCP tool access alone does not create an autonomous shared task bus.
+- Durable PostgreSQL mission/task/message storage, task claims, lease recovery, bounded retries, task results and MCP tools are implemented and tested in CI. They are not deployed yet.
+- The current delivery model is durable polling/claiming, not push/websocket delivery. Provider-specific always-on worker runtimes are not yet implemented or connected.
+- Standard A2A interoperability is not yet implemented. The internal task/message contract is the current shared exchange layer; MCP exposes it to connected agent clients.
 - No provider is considered connected until its individual end-to-end tests and token-revocation test pass.
