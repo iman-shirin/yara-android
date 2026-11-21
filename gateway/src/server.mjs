@@ -175,6 +175,8 @@ async function callMcpTool(agent, name, args, requestId) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      await client.query("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=now(),updated_at=now() WHERE status='running' AND lease_until < now() AND attempts >= max_attempts");
+      await client.query("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempts < max_attempts");
       const selected = await client.query(
         "SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=$1) AND attempts < max_attempts ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         [agent.id]
@@ -223,7 +225,7 @@ async function callMcpTool(agent, name, args, requestId) {
       const retry = outcome === "failed" && task.rows[0].attempts < task.rows[0].max_attempts;
       const status = outcome === "completed" ? "completed" : retry ? "queued" : "failed";
       const updated = await client.query(
-        "UPDATE yara_tasks SET status=$2,result=$3,lease_until=NULL,updated_at=now(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE NULL END WHERE id=$1 RETURNING *",
+        "UPDATE yara_tasks SET status=$2,assigned_to=CASE WHEN $2='queued' THEN NULL ELSE assigned_to END,result=$3,lease_until=NULL,updated_at=now(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE NULL END WHERE id=$1 RETURNING *",
         [args.taskId, status, JSON.stringify(resultBody)]
       );
       await client.query(
