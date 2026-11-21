@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS yara_agents (
   id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
