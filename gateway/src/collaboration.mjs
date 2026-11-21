@@ -20,6 +20,8 @@ export function validateMessagePayload(body) {
       (typeof body.recipientId !== "string" || !/^[a-z][a-z0-9-]{1,47}$/.test(body.recipientId))) return { ok: false, error: "invalid_recipient" };
   const kind = body.kind ?? "message";
   if (!MESSAGE_KINDS.has(kind)) return { ok: false, error: "invalid_message_kind" };
+  if (body.idempotencyKey !== undefined && body.idempotencyKey !== null &&
+      (typeof body.idempotencyKey !== "string" || body.idempotencyKey.length > 128)) return { ok: false, error: "invalid_idempotency_key" };
   if (body.body === undefined || Buffer.byteLength(JSON.stringify(body.body), "utf8") > 50000) return { ok: false, error: "invalid_message_body" };
   return { ok: true, value: { recipientId: body.recipientId ?? null, kind, body: body.body, idempotencyKey: body.idempotencyKey ?? null } };
 }
