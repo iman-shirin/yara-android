@@ -155,5 +155,20 @@ if (!databaseUrl) {
     assert.equal(messages.statusCode, 200);
     const stranger = await call("GET", `/v1/tasks/${id}/messages`, "agent-test-c");
     assert.equal(stranger.statusCode, 404);
+
+    const sent = await call("POST", "/v1/messages", "agent-test-a", {
+      taskId: id, recipientId: "agent-test-b", body: { text: "Task discussion begins." }
+    });
+    assert.equal(sent.statusCode, 201);
+    const reply = await call("POST", "/v1/messages", "agent-test-b", {
+      taskId: id, recipientId: "agent-test-a", body: { text: "I received the task context." }
+    });
+    assert.equal(reply.statusCode, 201);
+    const thread = await call("GET", `/v1/tasks/${id}/messages`, "agent-test-a");
+    assert.equal(thread.json().messages.length, 2);
+    const denied = await call("POST", "/v1/messages", "agent-test-c", {
+      taskId: id, recipientId: "agent-test-a", body: { text: "Unauthorized task message." }
+    });
+    assert.equal(denied.statusCode, 404);
   });
 }
