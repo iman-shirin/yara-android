@@ -13,16 +13,16 @@ This is an initial, self-hostable collaboration gateway. It is **not production-
 - Hard rejection of writes outside `agents/{agent-id}/...`; `main` and `master` are always denied.
 - Request size limits, path validation, redacted authorization headers and health endpoint.
 
-## API
+## API and MCP
 
-All agent endpoints require `Authorization: Bearer <agent-token>`.
+The stateless MCP endpoint is `POST /mcp`. It supports JSON-RPC initialization, tool discovery and tool calls using the authenticated agent bearer token. Available tools: `yara_identity`, `yara_read_file`, `yara_create_branch`, `yara_write_file` and `yara_create_draft_pr`. It exposes no merge or main-branch write operation. Use the HTTPS URL `https://<gateway-host>/mcp` after deployment; do not configure a provider against an unencrypted endpoint.\n\nAll agent REST and MCP endpoints require `Authorization: Bearer <agent-token>`.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/healthz` | Service and database health |
 | POST | `/v1/admin/agents` | Owner bootstrap: create an agent identity |\n| POST | `/v1/admin/agents/{id}/rotate` | Rotate an agent credential; old token stops working |
 | POST | `/v1/admin/agents/{id}/revoke` | Owner bootstrap: revoke an agent |
-| POST | `/v1/projects/{owner}/{repo}/branches` | Create an agent-scoped branch from main |\n| GET | `/v1/agents/me` | Return authenticated agent identity |
+| POST | `/v1/projects/{owner}/{repo}/branches` | Create an agent-scoped branch from main |\n| POST | `/mcp` | Stateless MCP endpoint for the tools listed above |\n| GET | `/v1/agents/me` | Return authenticated agent identity |
 | GET | `/v1/projects/{owner}/{repo}/files?path=...` | Read a repository file |
 | PUT | `/v1/projects/{owner}/{repo}/files` | Create/update a file on the agent's own branch |
 | POST | `/v1/projects/{owner}/{repo}/pull-requests` | Open a draft PR from the agent's own branch to main |
