@@ -6,6 +6,8 @@ TOOLS_VERSION="13114758"
 TOOLS_ARCHIVE="commandlinetools-linux-${TOOLS_VERSION}_latest.zip"
 TOOLS_URL="https://dl.google.com/android/repository/${TOOLS_ARCHIVE}"
 
+sudo apt-get update -qq
+sudo apt-get install -y --no-install-recommends curl unzip
 sudo mkdir -p "${SDK_ROOT}/cmdline-tools"
 sudo chown -R "$(id -u):$(id -g)" "${SDK_ROOT}"
 
