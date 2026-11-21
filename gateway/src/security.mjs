@@ -44,3 +44,31 @@ export function assertAgentBranch(agentId, branch) {
   }
   return true;
 }
+
+export function assertWritablePath(path) {
+  if (!validRepoPath(path)) throw new Error("invalid_resource_path");
+  const normalized = path.toLowerCase();
+  const blocked = [
+    ".github/workflows/",
+    ".github/codeowners",
+    ".github/rulesets/",
+    "gateway/src/server.mjs",
+    "gateway/src/security.mjs",
+    "gateway/package.json",
+    "gateway/package-lock.json",
+    "gateway/dockerfile",
+    "gateway/.env",
+    "gateway/.env.example",
+    "secrets/",
+    ".env"
+  ];
+  if (blocked.some((prefix) => normalized === prefix || normalized.startsWith(prefix))) {
+    throw new Error("protected_path");
+  }
+  if (normalized.endsWith(".pem") || normalized.endsWith(".key") ||
+      normalized.endsWith(".p12") || normalized.endsWith(".jks") ||
+      normalized.endsWith(".keystore") || normalized.endsWith("local.properties")) {
+    throw new Error("protected_path");
+  }
+  return true;
+}
