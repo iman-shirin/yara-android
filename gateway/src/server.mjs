@@ -262,6 +262,15 @@ async function callMcpTool(agent, name, args, requestId) {
     );
     return { messages: result.rows };
   }
+  if (name === "yara_message_ack") {
+    const result = await pool.query(
+      "UPDATE yara_messages SET read_at=now() WHERE id=$1 AND (recipient_id=$2 OR recipient_id IS NULL) RETURNING id,read_at",
+      [args.messageId, agent.id]
+    );
+    if (!result.rowCount) throw new Error("message_not_found");
+    await audit(agent.id, "message.ack", args.messageId, "success", requestId);
+    return result.rows[0];
+  }
   if (name === "yara_identity") {
     await audit(agent.id, "mcp.identity", agent.id, "success", requestId);
     return { id: agent.id, displayName: agent.display_name, status: "active" };
@@ -384,6 +393,11 @@ const mcpHandler = createMcpHandler((ctx) => {
     description: "Read durable direct and broadcast messages for this authenticated agent.",
     annotations: { readOnlyHint: true },
     inputSchema: z.object({ since: z.string().datetime().optional() }).strict()
+  });
+  register("yara_message_ack", {
+    description: "Acknowledge a direct or broadcast message delivered to this agent.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({ messageId: z.string().uuid() }).strict()
   });
   register("yara_identity", {
     description: "Return the authenticated YARA agent identity.",
