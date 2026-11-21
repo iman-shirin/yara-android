@@ -1,0 +1,30 @@
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+secrets/
+.local/
+
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+.cxx/
+.externalNativeBuild/
+
+# Node / generated bundles
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local runtime state and logs
+*.log
+coverage/

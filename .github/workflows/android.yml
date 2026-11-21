@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, feat/yara-collaboration-hub-foundation ]
   pull_request:
     branches: [ main, master ]
 
@@ -99,3 +99,51 @@ jobs:
             app/build/outputs/apk/debug/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+
+  gateway-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: yara
+          POSTGRES_PASSWORD: yara_test
+          POSTGRES_DB: yara_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yara -d yara_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://yara:yara_test@localhost:5432/yara_test
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate dependency lockfile
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Upload generated dependency lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: yara-gateway-package-lock
+          path: gateway/package-lock.json
+          retention-days: 1
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Check JavaScript syntax
+        run: npm run check
+      - name: Run Gateway security unit tests
+        run: npm test
+      - name: Validate MCP deployment smoke script
+        run: bash -n scripts/smoke-mcp.sh
+      - name: Build Gateway Docker image
+        run: docker build -t yara-gateway:ci .
