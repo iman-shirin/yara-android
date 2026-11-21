@@ -229,10 +229,11 @@ The following code has been committed to the execution branch, not to `main`:
 - `.github/workflows/gateway.yml`: standalone Gateway workflow for after this workflow is present on the default branch.
 - `.railway/railway.ts`: Railway Infrastructure as Code declaration for a PostgreSQL database and Gateway service; it has not been applied to an account.
 - `gateway/GITHUB_APP_SETUP.md`: exact minimal GitHub App permission and secret-injection checklist.
+- `docs/collaboration/PROVIDER_CONNECTIONS.md`: provider-specific MCP connection steps and actual plan/surface limitations.
 
-**Verified on PR head `c483d3815905edd53c1f77eed30442cd33dccf22` (2026-11-21):** Gateway workflow run #18 passed dependency installation, JavaScript syntax checks and all 6 security unit tests. Android workflow run #111 passed all 18 Android unit tests and built the debug APK; SHA-256 `52a2b05e0c5db76367e771ef971cbff4ac2046c8b4d679d1adf554ffafac66cc`.
+**Verified on code commit `fa76a353e95f1fe13416821a4aff05e60322f569` (2026-11-21):** Gateway workflow run #31 passed dependency installation, JavaScript syntax checks and all 6 security unit tests, including MCP read-only annotations. Android workflow run #111 previously passed all 18 Android unit tests and built the debug APK on commit `c483d3815905edd53c1f77eed30442cd33dccf22`; SHA-256 `52a2b05e0c5db76367e771ef971cbff4ac2046c8b4d679d1adf554ffafac66cc`. Android workflow run #143 is running on the newer code commit.
 
-**Not yet verified:** PostgreSQL integration, real GitHub App authentication, Codespaces execution, production deployment, provider connections, repository-private transition and enforced branch protection. The Gateway and Android checks above are CI evidence for the exact PR head SHA listed. No live service or provider integration is implied by those tests.
+**Not yet verified:** Railway IaC plan/apply, PostgreSQL integration, real GitHub App authentication, Codespaces execution, production deployment, provider connections, repository-private transition and enforced branch protection. The Gateway and Android checks above are CI evidence for the exact PR head SHA listed. No live service or provider integration is implied by those tests.
 
 ## 12. Status reporting format
 
