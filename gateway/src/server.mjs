@@ -189,6 +189,7 @@ async function callMcpTool(agent, name, args, requestId) {
   if (name === "yara_write_file") {
     validateRepo(owner, repo, args.path);
     assertAgentBranch(agent.id, args.branch);
+    assertWritablePath(args.path);
     if (typeof args.content !== "string" || Buffer.byteLength(args.content, "utf8") > 500000 ||
         typeof args.message !== "string" || args.message.trim().length < 1 || args.message.length > 200) {
       throw new Error("invalid_write_payload");
@@ -373,7 +374,8 @@ app.put("/v1/projects/:owner/:repo/files", { preHandler: authenticate }, async (
   } catch (error) {
     await audit(request.agent.id, "project.file.write", `${owner}/${repo}/${path}`, "denied", request.id, { reason: error.message });
     return reply.code(403).send({ error: error.message });
-  }\n  if (typeof content !== "string" || Buffer.byteLength(content, "utf8") > 500000 ||
+  }
+  if (typeof content !== "string" || Buffer.byteLength(content, "utf8") > 500000 ||
       typeof message !== "string" || message.trim().length < 1 || message.length > 200) {
     return reply.code(400).send({ error: "invalid_write_payload" });
   }
