@@ -5,6 +5,7 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { createPrivateKey, sign } from "node:crypto";
 import { assertAgentBranch, assertWritablePath, hashToken, issueAgentToken, safeEqual, validAgentId, validRepoPart, validRepoPath } from "./security.mjs";
+import { migrateCollaboration, registerCollaborationRoutes, validateTaskPayload, validateMessagePayload } from "./collaboration.mjs";
 
 const { Pool } = pg;
 const env = process.env;
@@ -154,6 +155,91 @@ function validateRepo(owner, repo, path) {
 }
 
 async function callMcpTool(agent, name, args, requestId) {
+  if (name === "yara_task_create") {
+    const parsed = validateTaskPayload(args);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const { title, description, assignedTo, maxAttempts } = parsed.value;
+    if (assignedTo) {
+      const exists = await pool.query("SELECT id FROM yara_agents WHERE id=$1 AND active=true", [assignedTo]);
+      if (!exists.rowCount) throw new Error("assignee_not_found");
+    }
+    const { randomUUID } = await import("node:crypto");
+    const result = await pool.query(
+      "INSERT INTO yara_tasks(id,title,description,created_by,assigned_to,max_attempts) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",
+      [randomUUID(), title, description, agent.id, assignedTo, maxAttempts]
+    );
+    await audit(agent.id, "task.create", result.rows[0].id, "success", requestId, { assignedTo });
+    return { task: result.rows[0] };
+  }
+  if (name === "yara_task_claim") {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const selected = await client.query(
+        "SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=$1) AND attempts < max_attempts ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
+        [agent.id]
+      );
+      if (!selected.rowCount) { await client.query("COMMIT"); return { task: null }; }
+      const updated = await client.query(
+        "UPDATE yara_tasks SET status='running',assigned_to=$2,attempts=attempts+1,lease_until=now()+interval '3 minutes',updated_at=now() WHERE id=$1 RETURNING *",
+        [selected.rows[0].id, agent.id]
+      );
+      await client.query("COMMIT");
+      await audit(agent.id, "task.claim", updated.rows[0].id, "success", requestId, { attempt: updated.rows[0].attempts });
+      return { task: updated.rows[0] };
+    } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
+    finally { client.release(); }
+  }
+  if (name === "yara_task_complete") {
+    const outcome = args.outcome ?? "completed";
+    if (!["completed", "failed"].includes(outcome)) throw new Error("invalid_outcome");
+    const resultBody = args.result ?? {};
+    if (Buffer.byteLength(JSON.stringify(resultBody), "utf8") > 50000) throw new Error("result_too_large");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const task = await client.query("SELECT * FROM yara_tasks WHERE id=$1 FOR UPDATE", [args.taskId]);
+      if (!task.rowCount || task.rows[0].assigned_to !== agent.id || task.rows[0].status !== "running") throw new Error("active_task_not_found");
+      const retry = outcome === "failed" && task.rows[0].attempts < task.rows[0].max_attempts;
+      const status = outcome === "completed" ? "completed" : retry ? "queued" : "failed";
+      const updated = await client.query(
+        "UPDATE yara_tasks SET status=$2,result=$3,lease_until=NULL,updated_at=now(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE NULL END WHERE id=$1 RETURNING *",
+        [args.taskId, status, JSON.stringify(resultBody)]
+      );
+      await client.query(
+        "INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body) VALUES(gen_random_uuid(),$1,$2,$3,'result',$4)",
+        [args.taskId, agent.id, task.rows[0].created_by, JSON.stringify({ outcome, retryScheduled: retry, result: resultBody })]
+      );
+      await client.query("COMMIT");
+      await audit(agent.id, "task.complete", args.taskId, "success", requestId, { status });
+      return { task: updated.rows[0], retryScheduled: retry };
+    } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
+    finally { client.release(); }
+  }
+  if (name === "yara_message_send") {
+    const parsed = validateMessagePayload(args);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const { recipientId, kind, body, idempotencyKey } = parsed.value;
+    if (recipientId) {
+      const exists = await pool.query("SELECT id FROM yara_agents WHERE id=$1 AND active=true", [recipientId]);
+      if (!exists.rowCount) throw new Error("recipient_not_found");
+    }
+    if (idempotencyKey && (typeof idempotencyKey !== "string" || idempotencyKey.length > 128)) throw new Error("invalid_idempotency_key");
+    const { randomUUID } = await import("node:crypto");
+    const inserted = await pool.query(
+      "INSERT INTO yara_messages(id,sender_id,recipient_id,kind,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",
+      [randomUUID(), agent.id, recipientId, kind, JSON.stringify(body), idempotencyKey]
+    );
+    await audit(agent.id, "message.send", recipientId ?? "broadcast", "success", requestId, { messageId: inserted.rows[0].id });
+    return { message: inserted.rows[0] };
+  }
+  if (name === "yara_message_inbox") {
+    const result = await pool.query(
+      "SELECT id,task_id,sender_id,recipient_id,kind,body,created_at,read_at FROM yara_messages WHERE (recipient_id=$1 OR recipient_id IS NULL) AND ($2::timestamptz IS NULL OR created_at>$2) ORDER BY created_at ASC LIMIT 100",
+      [agent.id, args.since ?? null]
+    );
+    return { messages: result.rows };
+  }
   if (name === "yara_identity") {
     await audit(agent.id, "mcp.identity", agent.id, "success", requestId);
     return { id: agent.id, displayName: agent.display_name, status: "active" };
@@ -228,6 +314,45 @@ const mcpHandler = createMcpHandler((ctx) => {
     }
   });
 
+  register("yara_task_create", {
+    description: "Create a durable task for the YARA agent pool or assign it to one active agent.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({
+      title: z.string().min(3).max(200),
+      description: z.string().min(1).max(20000),
+      assignedTo: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/).nullable().optional(),
+      maxAttempts: z.number().int().min(1).max(10).optional()
+    }).strict()
+  });
+  register("yara_task_claim", {
+    description: "Claim the next queued task for this authenticated agent. A lease is created and must be heartbeated through REST if work is long-running.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({}).strict()
+  });
+  register("yara_task_complete", {
+    description: "Submit a result or failure for a task assigned to this authenticated agent.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({
+      taskId: z.string().uuid(),
+      outcome: z.enum(["completed", "failed"]).optional(),
+      result: z.unknown().optional()
+    }).strict()
+  });
+  register("yara_message_send", {
+    description: "Send a durable direct message to another YARA agent or broadcast to the agent pool.",
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    inputSchema: z.object({
+      recipientId: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/).nullable().optional(),
+      kind: z.enum(["message", "task_update", "result", "request"]).optional(),
+      body: z.unknown(),
+      idempotencyKey: z.string().max(128).optional()
+    }).strict()
+  });
+  register("yara_message_inbox", {
+    description: "Read durable direct and broadcast messages for this authenticated agent.",
+    annotations: { readOnlyHint: true },
+    inputSchema: z.object({ since: z.string().datetime().optional() }).strict()
+  });
   register("yara_identity", {
     description: "Return the authenticated YARA agent identity.",
     annotations: { readOnlyHint: true },
@@ -457,6 +582,8 @@ app.setErrorHandler(async (error, request, reply) => {
 });
 
 await migrate();
+await migrateCollaboration(pool);
+registerCollaborationRoutes(app, { pool, authenticate, audit });
 const port = Number(env.PORT ?? 8080);
 await app.listen({ host: env.HOST ?? "0.0.0.0", port });
 
