@@ -1,7 +1,7 @@
 # YARA Cloudflare Free Runtime Migration
 
 ## Decision
-Replace the Node.js/Fastify/PostgreSQL hosting target with a Cloudflare Workers Fetch runtime and D1 SQLite database. Preserve REST routes, MCP tool names and schemas, per-agent credentials, GitHub App integration, branch isolation, task leases, retries, message inbox, and append-only audit semantics.
+Replace the Node.js/Fastify/PostgreSQL hosting target with a Cloudflare Workers Fetch runtime and D1 SQLite database. Preserve REST routes, MCP tool names and schemas, per-agent credentials, GitHub App integration, branch isolation, task leases, retries, message inbox with per-agent broadcast receipts, and append-only audit semantics.
 
 **No deployment is part of this migration.** The account plan, billing controls, and deployment permissions must be verified before any production resource is created.
 
@@ -23,7 +23,7 @@ These are platform-published limits, not confirmation of the user's account sett
 - yara_tasks: task state, attempts, max attempts, assignee, lease expiry, result and timestamps.
 - yara_messages: direct/broadcast messages, task association, idempotency key and acknowledgement time.
 - yara_audit: append-only action history, protected by SQLite triggers against UPDATE/DELETE.
-Task claiming must be a single conditional SQL statement using a subquery and RETURNING, so two concurrent Workers cannot claim the same queued row. Expired leases are recovered in the same atomic claim operation: exhausted tasks become failed; retryable tasks return to the queue. Task completion uses D1 batch transactions for the task update and result-message insert.
+Task claiming must be a single conditional SQL statement using a subquery and RETURNING, so two concurrent Workers cannot claim the same queued row. Expired leases are recovered in the same atomic claim operation: exhausted tasks become failed; retryable tasks return to the queue. Task completion uses D1 batch transactions for the task update and result-message insert. Broadcast message read receipts are stored per agent so one recipient cannot acknowledge a message for every other recipient.
 
 ## Security invariants to preserve
 1. Every agent has a unique random bearer token; only its SHA-256 hash is stored.
@@ -46,5 +46,6 @@ Before cutover, test modern MCP discovery/calls and legacy stateless initializat
 - Cloudflare account connection was verified and existing resources were inspected; the two existing Workers and D1 databases belong to Nova Proxy, not YARA.
 - Billing profile, billing usage, and subscriptions could not be inspected because the current OAuth connection has no Billing Read scope. An API token with account-scoped Billing Read is required for that check.
 - No YARA Cloudflare resources were created and no YARA deployment was run. The placeholder D1 database ID remains intentionally unset until a dedicated YARA database is created after free-plan and billing verification.
-- Initial static validation passed (7 unit tests, local D1 migration, dependency audit, Wrangler dry-run build); end-to-end Worker/MCP behavior is not yet verified.
-- A runtime defect in the MCP handler invocation and a pull-request CI base-branch filter were identified and corrected in this revision; CI must rerun to verify the fixes.
+- Latest GitHub Actions run passed: 8 tests including a stateless MCP initialize smoke test; Node syntax checks passed; both D1 migrations applied to the local SQLite emulator (15 SQL commands); npm audit reported zero vulnerabilities; Wrangler dry-run build passed (706.27 KiB upload, 141.35 KiB gzip).
+- Corrected the MCP handler invocation, added per-agent broadcast receipts, and fixed the CI pull-request base-branch filter.
+- Full REST workflow tests against a Worker runtime, D1 concurrent-claim stress tests, and real external MCP client round-trip remain outstanding.
