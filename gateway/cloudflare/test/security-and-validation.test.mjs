@@ -137,3 +137,43 @@ test('REST validation errors return client status codes instead of internal erro
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'invalid_recipient' });
 });
+
+
+test('stateless MCP endpoint exposes the expected YARA tool registry', async () => {
+  const { default: worker } = await import('../src/index.mjs');
+  const token = 'mcp-tools-list-agent-token';
+  const { hashToken } = await import('../src/security.mjs');
+  const digest = await hashToken(token);
+  const DB = {
+    prepare(sql) {
+      const statement = {
+        values: [],
+        bind(...values) { this.values = values; return this; },
+        async first() {
+          if (sql.includes('FROM yara_agents WHERE token_hash=?')) {
+            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent' } : null;
+          }
+          return null;
+        },
+        async run() { return { success: true, meta: { changes: 1 } }; },
+        async all() { return { results: [] }; }
+      };
+      return statement;
+    },
+    async batch() { return []; }
+  };
+  const response = await worker.fetch(new Request('https://yara.example.workers.dev/mcp', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer ' + token,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream'
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+  }), { DB, YARA_BOOTSTRAP_TOKEN: 'x'.repeat(40), GITHUB_REPOSITORY: 'iman-shirin/yara-android' }, {});
+  assert.equal(response.status, 200, await response.clone().text());
+  const body = await response.json();
+  assert.equal(body.jsonrpc, '2.0');
+  assert.ok(body.result.tools.some((tool) => tool.name === 'yara_task_claim'));
+  assert.ok(body.result.tools.some((tool) => tool.name === 'yara_message_ack'));
+});
