@@ -90,3 +90,18 @@ test('MCP endpoint serves a stateless initialize request through the web handler
   assert.equal(response.status, 200, await response.clone().text());
   assert.match(response.headers.get('content-type') ?? '', /application\/json|text\/event-stream/);
 });
+
+
+test('admin bootstrap routes reject missing or weak owner secrets before database access', async () => {
+  const { default: worker } = await import('../src/index.mjs');
+  const DB = { prepare() { throw new Error('database must not be accessed'); } };
+  for (const pathname of ['/v1/admin/agents', '/v1/admin/agents/agent-test/revoke', '/v1/admin/agents/agent-test/rotate']) {
+    const response = await worker.fetch(new Request('https://yara.example.workers.dev' + pathname, {
+      method: 'POST',
+      headers: { authorization: 'Bearer weak-secret', 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'agent-new', displayName: 'New Agent' })
+    }), { DB, YARA_BOOTSTRAP_TOKEN: 'weak-secret' }, {});
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'bootstrap_not_configured' });
+  }
+});
