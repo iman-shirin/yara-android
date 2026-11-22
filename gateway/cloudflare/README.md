@@ -3,7 +3,7 @@
 ## Decision
 Replace the Node.js/Fastify/PostgreSQL hosting target with a Cloudflare Workers Fetch runtime and D1 SQLite database. Preserve REST routes, MCP tool names and schemas, per-agent credentials, GitHub App integration, branch isolation, task leases, retries, message inbox with per-agent broadcast receipts, and append-only audit semantics.
 
-**No deployment is part of this migration.** The account plan, billing controls, and deployment permissions must be verified before any production resource is created.
+**No deployment is part of this migration.** The account subscription page was reviewed before creating the dedicated D1 database. Confirm usage/spend-management settings before deploying the Worker.
 
 ## Why the existing service cannot be deployed unchanged
 The current Gateway starts a long-lived Fastify listener, creates a pg.Pool, uses PostgreSQL SQL and transaction APIs, and adapts MCP to Node HTTP. Those are not a direct Workers entry point. The Worker must export a Fetch handler, use D1 bindings, use Web Crypto, and use the MCP SDK's Web-standards stateless handler.
@@ -45,7 +45,9 @@ Before cutover, test modern MCP discovery/calls and legacy stateless initializat
 - Migration branch created from PR #23 head.
 - Cloudflare account connection was verified and existing resources were inspected; the two existing Workers and D1 databases belong to Nova Proxy, not YARA.
 - Billing profile, billing usage, and subscriptions could not be inspected because the current OAuth connection has no Billing Read scope. An API token with account-scoped Billing Read is required for that check.
-- No YARA Cloudflare resources were created and no YARA deployment was run. The placeholder D1 database ID remains intentionally unset until a dedicated YARA database is created after free-plan and billing verification.
+- A dedicated Cloudflare D1 database `yara-db` was created after the account subscription page showed Workers Free active, no Workers Paid subscription, and no payment method on file. Database ID is configured in `wrangler.toml`; the existing Nova Proxy resources were not modified.
+- Both migrations (`0001_init.sql` and `0002_message_receipts.sql`) were applied to the live YARA D1 database and verified by querying `sqlite_master`: five YARA tables, six indexes, and two append-only audit triggers are present.
+- The Worker has not yet been deployed. The account billing usage/spend-management settings have not been independently read through the connected API; the user-provided subscription page alone does not prove all possible account-level billable usage settings.
 - Latest GitHub Actions run passed: 8 tests including a stateless MCP initialize smoke test; Node syntax checks passed; both D1 migrations applied to the local SQLite emulator (15 SQL commands); npm audit reported zero vulnerabilities; Wrangler dry-run build passed (706.27 KiB upload, 141.35 KiB gzip).
 - Corrected the MCP handler invocation, added per-agent broadcast receipts, and fixed the CI pull-request base-branch filter.
 - Full REST workflow tests against a Worker runtime, D1 concurrent-claim stress tests, and real external MCP client round-trip remain outstanding.
