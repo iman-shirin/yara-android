@@ -5,8 +5,8 @@ workers_dev = true
 
 [[d1_databases]]
 binding = "DB"
-database_name = "yara-collaboration"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_name = "yara-db"
+database_id = "1b1feed6-0908-46ed-b113-58e10cf6d7d1"
 migrations_dir = "migrations"
 
 [vars]
