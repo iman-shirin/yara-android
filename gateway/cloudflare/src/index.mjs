@@ -37,9 +37,12 @@ async function githubToken(env) {
   const present = keys.filter((key) => Boolean(env[key]));
   if (present.length === 0 || present.length !== keys.length) throw Object.assign(new Error('github_app_not_configured'), { status:503 });
   if (cachedInstallationToken && Date.now() < cachedInstallationTokenExpiresAt - 60000) return cachedInstallationToken;
-  const pem = new TextDecoder().decode(decodeBase64(env.GITHUB_APP_PRIVATE_KEY_BASE64)).replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
-  const der = decodeBase64(pem);
-  const key = await crypto.subtle.importKey('pkcs8', der, { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' }, false, ['sign']);
+  const pemText = new TextDecoder().decode(decodeBase64(env.GITHUB_APP_PRIVATE_KEY_BASE64)).trim();
+  const isPkcs1 = /-----BEGIN RSA PRIVATE KEY-----/.test(pemText);
+  const pem = pemText.replace(/-----BEGIN (?:RSA )?PRIVATE KEY-----|-----END (?:RSA )?PRIVATE KEY-----|\s/g, '');
+  const rawKey = decodeBase64(pem);
+  const pkcs8 = isPkcs1 ? rsaPkcs1ToPkcs8(rawKey) : rawKey;
+  const key = await crypto.subtle.importKey('pkcs8', pkcs8, { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' }, false, ['sign']);
   const now = Math.floor(Date.now() / 1000);
   const header = base64Url(new TextEncoder().encode(JSON.stringify({ alg:'RS256', typ:'JWT' })));
   const payload = base64Url(new TextEncoder().encode(JSON.stringify({ iat:now-30, exp:now+540, iss:env.GITHUB_APP_ID })));
@@ -220,9 +223,9 @@ async function handleApi(request, env, ctx) {
     await env.DB.prepare('SELECT 1 AS ok').first(); return json({status:'ok',service:'yara-universal-gateway',runtime:'cloudflare-workers'});
   }
   if (path==='/v1/admin/agents'&&method==='POST') {
+    if (typeof env.YARA_BOOTSTRAP_TOKEN!=='string'||env.YARA_BOOTSTRAP_TOKEN.length<32) return err('bootstrap_not_configured',503);
     const supplied=parseBearer(request.headers.get('authorization'));
     if (!supplied||!safeEqual(supplied,env.YARA_BOOTSTRAP_TOKEN)) { await audit(env,null,'agent.provision','agent-registry','denied',requestId); return err('unauthorized',401); }
-    if (typeof env.YARA_BOOTSTRAP_TOKEN!=='string'||env.YARA_BOOTSTRAP_TOKEN.length<32) return err('bootstrap_not_configured',503);
     const body=await parseJson(request), id=body.id, displayName=body.displayName;
     if (!validAgentId(id)||typeof displayName!=='string'||!displayName.trim()||displayName.length>100) return err('invalid_agent',400);
     const token=issueAgentToken();
@@ -233,6 +236,7 @@ async function handleApi(request, env, ctx) {
   }
   const adminMatch=path.match(/^\/v1\/admin\/agents\/([a-z][a-z0-9-]{1,47})\/(rotate|revoke)$/);
   if (adminMatch&&(method==='POST')) {
+    if (typeof env.YARA_BOOTSTRAP_TOKEN!=='string'||env.YARA_BOOTSTRAP_TOKEN.length<32) return err('bootstrap_not_configured',503);
     const supplied=parseBearer(request.headers.get('authorization')); if (!supplied||!safeEqual(supplied,env.YARA_BOOTSTRAP_TOKEN)) return err('unauthorized',401);
     const id=adminMatch[1], action=adminMatch[2];
     if (action==='rotate') { const token=issueAgentToken(); const result=await env.DB.prepare('UPDATE yara_agents SET token_hash=?,active=1,revoked_at=NULL WHERE id=? RETURNING id').bind(await hashToken(token),id).first(); if (!result) return err('agent_not_found',404); await audit(env,'owner','agent.token.rotate',id,'success',requestId); return json({id,token,warning:'Store this token securely. It will not be shown again.'}); }
