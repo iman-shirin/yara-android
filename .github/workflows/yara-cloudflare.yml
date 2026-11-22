@@ -40,6 +40,6 @@ jobs:
       - name: Run security and validation tests
         run: npm test
       - name: Apply D1 migrations to local database
-        run: npx wrangler d1 migrations apply yara-collaboration --local
+        run: npx wrangler d1 migrations apply yara-db --local
       - name: Build Worker without deploying
         run: npx wrangler deploy --dry-run
