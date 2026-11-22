@@ -88,5 +88,5 @@ test('MCP endpoint serves a stateless initialize request through the web handler
   });
   const response = await worker.fetch(request, { DB, YARA_BOOTSTRAP_TOKEN: 'x'.repeat(40), GITHUB_REPOSITORY: 'iman-shirin/yara-android' }, {});
   assert.equal(response.status, 200, await response.clone().text());
-  assert.match(response.headers.get('content-type') ?? '', /application\\/json|text\\/event-stream/);
+  assert.match(response.headers.get('content-type') ?? '', /application\/json|text\/event-stream/);
 });
