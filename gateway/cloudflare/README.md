@@ -43,6 +43,8 @@ Before cutover, test modern MCP discovery/calls and legacy stateless initializat
 ## Current status
 - Source inspected: PR #22 foundation and PR #23 bootstrap hardening.
 - Migration branch created from PR #23 head.
-- No Cloudflare account was inspected or connected.
-- No Cloudflare resources were created and no deployment was run.
-- Worker implementation and static validation are complete on this branch; GitHub Actions run #22 passed (7 unit tests, D1 local migration, dependency audit, Wrangler dry-run build).
+- Cloudflare account connection was verified and existing resources were inspected; the two existing Workers and D1 databases belong to Nova Proxy, not YARA.
+- Billing profile, billing usage, and subscriptions could not be inspected because the current OAuth connection has no Billing Read scope. An API token with account-scoped Billing Read is required for that check.
+- No YARA Cloudflare resources were created and no YARA deployment was run. The placeholder D1 database ID remains intentionally unset until a dedicated YARA database is created after free-plan and billing verification.
+- Initial static validation passed (7 unit tests, local D1 migration, dependency audit, Wrangler dry-run build); end-to-end Worker/MCP behavior is not yet verified.
+- A runtime defect in the MCP handler invocation and a pull-request CI base-branch filter were identified and corrected in this revision; CI must rerun to verify the fixes.
