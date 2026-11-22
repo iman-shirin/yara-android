@@ -43,3 +43,50 @@ test('message validation rejects invalid recipients, IDs, kinds and oversized bo
   assert.equal(validateMessagePayload({kind:'run-shell',body:'x'}).error,'invalid_message_kind');
   assert.equal(validateMessagePayload({body:'x'.repeat(50001)}).error,'invalid_message_body');
 });
+
+
+test('MCP endpoint serves a stateless initialize request through the web handler', async () => {
+  const { default: worker } = await import('../src/index.mjs');
+  const token = 'test-agent-token';
+  const { hashToken } = await import('../src/security.mjs');
+  const digest = await hashToken(token);
+  const DB = {
+    prepare(sql) {
+      const statement = {
+        values: [],
+        bind(...values) { this.values = values; return this; },
+        async first() {
+          if (sql.includes('FROM yara_agents WHERE token_hash=?')) {
+            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent' } : null;
+          }
+          return null;
+        },
+        async run() { return { success: true, meta: { changes: 1 } }; },
+        async all() { return { results: [] }; }
+      };
+      return statement;
+    },
+    async batch() { return []; }
+  };
+  const request = new Request('https://yara.example.workers.dev/mcp', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'yara-smoke-test', version: '1.0.0' }
+      }
+    })
+  });
+  const response = await worker.fetch(request, { DB, YARA_BOOTSTRAP_TOKEN: 'x'.repeat(40), GITHUB_REPOSITORY: 'iman-shirin/yara-android' }, {});
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.match(response.headers.get('content-type') ?? '', /application\\/json|text\\/event-stream/);
+});
