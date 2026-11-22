@@ -105,3 +105,35 @@ test('admin bootstrap routes reject missing or weak owner secrets before databas
     assert.deepEqual(await response.json(), { error: 'bootstrap_not_configured' });
   }
 });
+
+
+test('REST validation errors return client status codes instead of internal errors', async () => {
+  const { default: worker } = await import('../src/index.mjs');
+  const { hashToken } = await import('../src/security.mjs');
+  const token = 'rest-validation-agent-token';
+  const digest = await hashToken(token);
+  const DB = {
+    prepare(sql) {
+      const statement = {
+        values: [],
+        bind(...values) { this.values = values; return this; },
+        async first() {
+          if (sql.includes('FROM yara_agents WHERE token_hash=?')) {
+            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent' } : null;
+          }
+          return null;
+        },
+        async run() { return { success: true, meta: { changes: 1 } }; },
+        async all() { return { results: [] }; }
+      };
+      return statement;
+    }
+  };
+  const response = await worker.fetch(new Request('https://yara.example.workers.dev/v1/messages', {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({ recipientId: '../invalid', body: 'hello' })
+  }), { DB, GITHUB_REPOSITORY: 'iman-shirin/yara-android' }, {});
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'invalid_recipient' });
+});
