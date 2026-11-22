@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:local": "wrangler d1 migrations apply yara-collaboration --local",
-    "db:remote": "wrangler d1 migrations apply yara-collaboration --remote",
+    "db:local": "wrangler d1 migrations apply yara-db --local",
+    "db:remote": "wrangler d1 migrations apply yara-db --remote",
     "check": "node --check src/index.mjs && node --check src/security.mjs && node --check src/collaboration.mjs",
     "test": "node --test test/security-and-validation.test.mjs"
   },
