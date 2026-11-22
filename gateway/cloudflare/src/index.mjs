@@ -131,17 +131,26 @@ async function callTool(env, agent, name, args, requestId) {
       if (!participants.includes(agent.id) || (v.recipientId && !participants.includes(v.recipientId))) throw new Error('task_not_found');
     }
     const id=uuid();
-    const inserted=await db.prepare('INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body,idempotency_key) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sender_id,idempotency_key) DO NOTHING RETURNING *').bind(id,v.taskId,agent.id,v.recipientId,v.kind,asJson(v.body),v.idempotencyKey).first();
+    const batch=await db.batch([
+      db.prepare('INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body,idempotency_key) VALUES(?,?,?,?,?,?,?) ON CONFLICT(sender_id,idempotency_key) DO NOTHING RETURNING *').bind(id,v.taskId,agent.id,v.recipientId,v.kind,asJson(v.body),v.idempotencyKey),
+      db.prepare('INSERT OR IGNORE INTO yara_message_receipts(message_id,agent_id) SELECT ?,id FROM yara_agents WHERE active=1 AND ? IS NULL AND EXISTS (SELECT 1 FROM yara_messages WHERE id=?)').bind(id,v.recipientId,id)
+    ]);
+    const inserted=batch[0].results?.[0] ?? null;
     if (!inserted) throw new Error('duplicate_message');
     await audit(env,agent.id,'message.send',v.recipientId ?? 'broadcast','success',requestId,{ messageId:id }); return { message:normalizeMessage(inserted) };
   }
   if (name === 'yara_message_inbox') {
     const since=args.since ?? null;
-    const rows=await db.prepare('SELECT id,task_id,sender_id,recipient_id,kind,body,created_at,read_at FROM yara_messages WHERE (recipient_id=? OR recipient_id IS NULL) AND (? IS NULL OR created_at>?) ORDER BY created_at ASC LIMIT 100').bind(agent.id,since,since).all();
+    const rows=await db.prepare('SELECT m.id,m.task_id,m.sender_id,m.recipient_id,m.kind,m.body,m.created_at,CASE WHEN m.recipient_id IS NULL THEN r.read_at ELSE m.read_at END AS read_at FROM yara_messages m LEFT JOIN yara_message_receipts r ON r.message_id=m.id AND r.agent_id=? WHERE (m.recipient_id=? OR m.recipient_id IS NULL) AND (? IS NULL OR m.created_at>?) ORDER BY m.created_at ASC LIMIT 100').bind(agent.id,agent.id,since,since).all();
     return { messages:rows.results.map(normalizeMessage) };
   }
   if (name === 'yara_message_ack') {
-    const row=await db.prepare('UPDATE yara_messages SET read_at=? WHERE id=? AND (recipient_id=? OR recipient_id IS NULL) RETURNING id,read_at').bind(nowIso(),args.messageId,agent.id).first();
+    const message=await getRow(db.prepare('SELECT recipient_id FROM yara_messages WHERE id=?').bind(args.messageId));
+    if (!message || (message.recipient_id !== null && message.recipient_id !== agent.id)) throw new Error('message_not_found');
+    const stamp=nowIso();
+    const row=message.recipient_id===null
+      ? await db.prepare('INSERT INTO yara_message_receipts(message_id,agent_id,read_at) VALUES(?,?,?) ON CONFLICT(message_id,agent_id) DO UPDATE SET read_at=excluded.read_at RETURNING message_id AS id,read_at').bind(args.messageId,agent.id,stamp).first()
+      : await db.prepare('UPDATE yara_messages SET read_at=? WHERE id=? AND recipient_id=? RETURNING id,read_at').bind(stamp,args.messageId,agent.id).first();
     if (!row) throw new Error('message_not_found'); await audit(env,agent.id,'message.ack',args.messageId,'success',requestId); return row;
   }
   const owner=args.owner, repo=args.repo;
