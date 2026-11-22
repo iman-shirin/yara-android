@@ -202,7 +202,7 @@ function createMcpServer(env, agent, requestId) {
 async function handleMcp(request, env, agent) {
   const requestId=request.headers.get('cf-ray') ?? uuid();
   const handler=createMcpHandler(()=>createMcpServer(env,agent,requestId),{legacy:'stateless',responseMode:'auto',maxRequestBodySize:1024*1024});
-  return handler(request,env,{});
+  return handler.fetch(request);
 }
 
 async function handleApi(request, env, ctx) {
