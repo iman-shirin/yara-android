@@ -96,8 +96,8 @@ async function callTool(env, agent, name, args, requestId) {
   if (name === 'yara_task_claim') {
     const stamp = nowIso(), lease = new Date(Date.now()+180000).toISOString();
     const batch = await db.batch([
-      db.prepare("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=?,updated_at=? WHERE status='running' AND lease_until < ? AND attempts >= max_attempts").bind(stamp,stamp,stamp),
-      db.prepare("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=? WHERE status='running' AND lease_until < ? AND attempts < max_attempts").bind(stamp,stamp),
+      db.prepare("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=?,updated_at=? WHERE status='running' AND lease_until <= ? AND attempts >= max_attempts").bind(stamp,stamp,stamp),
+      db.prepare("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=? WHERE status='running' AND lease_until <= ? AND attempts < max_attempts").bind(stamp,stamp),
       db.prepare("UPDATE yara_tasks SET status='running',assigned_to=?,attempts=attempts+1,lease_until=?,updated_at=? WHERE id=(SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=?) AND attempts < max_attempts ORDER BY created_at LIMIT 1) AND status='queued' RETURNING *").bind(agent.id,lease,stamp,agent.id)
     ]);
     const task = batch[2].results?.[0] ?? null;
@@ -105,21 +105,22 @@ async function callTool(env, agent, name, args, requestId) {
     return { task:normalizeTask(task) };
   }
   if (name === 'yara_task_heartbeat') {
-    const lease = new Date(Date.now()+180000).toISOString();
-    const result = await db.prepare("UPDATE yara_tasks SET lease_until=?,updated_at=? WHERE id=? AND assigned_to=? AND status='running' RETURNING id,lease_until").bind(lease,nowIso(),args.taskId,agent.id).first();
+    const stamp = nowIso(), lease = new Date(Date.now()+180000).toISOString();
+    const result = await db.prepare("UPDATE yara_tasks SET lease_until=?,updated_at=? WHERE id=? AND assigned_to=? AND status='running' AND lease_until>? RETURNING id,lease_until").bind(lease,stamp,args.taskId,agent.id,stamp).first();
     if (!result) throw new Error('active_task_not_found'); return result;
   }
   if (name === 'yara_task_complete') {
     const outcome = args.outcome ?? 'completed'; if (!['completed','failed'].includes(outcome)) throw new Error('invalid_outcome');
     const resultBody = args.result ?? {}; const serialized = asJson(resultBody); if (byteLength(serialized)>50000) throw new Error('result_too_large');
-    const current = await getRow(db.prepare("SELECT * FROM yara_tasks WHERE id=? AND assigned_to=? AND status='running'").bind(args.taskId,agent.id));
+    const stamp = nowIso();
+    const current = await getRow(db.prepare("SELECT * FROM yara_tasks WHERE id=? AND assigned_to=? AND status='running' AND lease_until>?").bind(args.taskId,agent.id,stamp));
     if (!current) throw new Error('active_task_not_found');
     const retry = outcome === 'failed' && current.attempts < current.max_attempts;
     const status = outcome === 'completed' ? 'completed' : retry ? 'queued' : 'failed';
-    const stamp = nowIso(), messageId = uuid();
+    const messageId = uuid();
     const batch = await db.batch([
-      db.prepare("UPDATE yara_tasks SET status=?,assigned_to=CASE WHEN ?='queued' THEN NULL ELSE assigned_to END,result=?,lease_until=NULL,updated_at=?,completed_at=CASE WHEN ? IN ('completed','failed') THEN ? ELSE NULL END WHERE id=? AND assigned_to=? AND status='running' RETURNING id").bind(status,status,serialized,stamp,status,stamp,args.taskId,agent.id),
-      db.prepare("INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body) SELECT ?,?,?,?,'result',? WHERE EXISTS (SELECT 1 FROM yara_tasks WHERE id=? AND status=? AND updated_at=?)").bind(messageId,args.taskId,agent.id,current.created_by,asJson({ outcome,retryScheduled:retry,result:resultBody }),args.taskId,status,stamp)
+      db.prepare("UPDATE yara_tasks SET status=?,assigned_to=CASE WHEN ?='queued' THEN NULL ELSE assigned_to END,result=?,lease_until=NULL,updated_at=?,completed_at=CASE WHEN ? IN ('completed','failed') THEN ? ELSE NULL END WHERE id=? AND assigned_to=? AND status='running' AND lease_until>? RETURNING id").bind(status,status,serialized,stamp,status,stamp,args.taskId,agent.id,stamp),
+      db.prepare("INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body) SELECT ?,?,?,?,'result',? WHERE EXISTS (SELECT 1 FROM yara_tasks WHERE id=? AND status=? AND updated_at=? AND lease_until IS NULL)").bind(messageId,args.taskId,agent.id,current.created_by,asJson({ outcome,retryScheduled:retry,result:resultBody }),args.taskId,status,stamp)
     ]);
     if (!batch[0].results?.length) throw new Error('active_task_not_found');
     await audit(env,agent.id,'task.complete',args.taskId,'success',requestId,{ status });
