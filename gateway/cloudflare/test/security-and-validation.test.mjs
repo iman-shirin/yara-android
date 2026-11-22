@@ -172,7 +172,11 @@ test('stateless MCP endpoint exposes the expected YARA tool registry', async () 
     body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
   }), { DB, YARA_BOOTSTRAP_TOKEN: 'x'.repeat(40), GITHUB_REPOSITORY: 'iman-shirin/yara-android' }, {});
   assert.equal(response.status, 200, await response.clone().text());
-  const body = await response.json();
+  assert.match(response.headers.get('content-type') ?? '', /text\\/event-stream|application\\/json/);
+  const wire = await response.text();
+  const dataLine = wire.split(/\\r?\\n/).find((line) => line.startsWith('data:'));
+  assert.ok(dataLine, wire);
+  const body = JSON.parse(dataLine.slice(5).trim());
   assert.equal(body.jsonrpc, '2.0');
   assert.ok(body.result.tools.some((tool) => tool.name === 'yara_task_claim'));
   assert.ok(body.result.tools.some((tool) => tool.name === 'yara_message_ack'));
