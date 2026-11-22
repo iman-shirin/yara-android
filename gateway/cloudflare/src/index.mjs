@@ -302,6 +302,18 @@ async function handleApi(request, env, ctx) {
   return err('not_found',404);
 }
 
+const ERROR_STATUS = {
+  invalid_json:400, invalid_task:400, invalid_title:400, invalid_description:400,
+  invalid_assignee:400, invalid_max_attempts:400, invalid_message:400, invalid_recipient:400,
+  invalid_task_id:400, invalid_message_kind:400, invalid_idempotency_key:400,
+  invalid_message_body:400, invalid_status:400, invalid_outcome:400, result_too_large:400,
+  invalid_branch:400, invalid_branch_name:400, invalid_resource_path:400, invalid_write_payload:400,
+  invalid_pull_request_payload:400, assignee_not_found:404, recipient_not_found:404,
+  task_not_found:404, active_task_not_found:404, agent_not_found:404, file_not_found:404,
+  duplicate_message:409, branch_out_of_scope:403, protected_branch:403, protected_path:403,
+  repository_not_allowed:403, github_app_not_configured:503
+};
+
 export default {
   async fetch(request, env, ctx) {
     try {
@@ -313,7 +325,7 @@ export default {
       }
       return await handleApi(request,env,ctx);
     } catch(error) {
-      const status=Number.isInteger(error.status)?error.status:500;
+      const status=Number.isInteger(error.status)?error.status:(ERROR_STATUS[error.message]??500);
       const code=error.message==='github_app_not_configured'?'github_app_not_configured':status>=500?'internal_error':error.message;
       return json({error:code},status);
     }
