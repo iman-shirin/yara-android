@@ -50,8 +50,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.sin
 
-data class ChatLine(val role: String, val content: String)
-
 class MainActivity : ComponentActivity() {
     private val prefs by lazy { YaraPreferences(this) }
     private val store by lazy { ChatStore(this) }
@@ -72,7 +70,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch {
-            val saved = runCatching { store.load() }.getOrDefault(emptyList())
+            val savedConversations = runCatching { store.loadConversations() }.getOrDefault(emptyList())
+            val savedActiveId = runCatching { store.loadActiveConversationId() }.getOrNull()
+            val initialConversation = savedConversations.firstOrNull { it.id == savedActiveId }
+                ?: savedConversations.maxByOrNull { it.updatedAt }
+                ?: store.newConversation()
+            store.saveActiveConversationId(initialConversation.id)
             setContent {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
@@ -82,7 +85,9 @@ class MainActivity : ComponentActivity() {
                         surface = Color(0xFF171D32)
                     )
                 ) {
-                    var lines by remember { mutableStateOf(saved) }
+                    var conversations by remember { mutableStateOf(savedConversations) }
+                    var activeConversationId by remember { mutableStateOf(initialConversation.id) }
+                    var lines by remember { mutableStateOf(initialConversation.messages) }
                     var input by remember { mutableStateOf("") }
                     var busy by remember { mutableStateOf(false) }
                     val context = LocalContext.current
@@ -111,7 +116,12 @@ class MainActivity : ComponentActivity() {
                                 "مجوز اعلان داده نشد؛ یادآوری ثبت نشد. از تنظیمات اندروید مجوز اعلان یارا را فعال کن."
                             }
                             lines = lines + ChatLine("assistant", reminderReply)
-                            lifecycleScope.launch { runCatching { store.save(lines) } }
+                            lifecycleScope.launch {
+                                runCatching {
+                                    store.saveConversation(ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines))
+                                    conversations = store.loadConversations()
+                                }
+                            }
                         }
                     }
                     val microphonePermission = rememberLauncherForActivityResult(
@@ -138,7 +148,8 @@ class MainActivity : ComponentActivity() {
                     }
                     var showSettings by remember { mutableStateOf(false) }
                     var showPlugins by remember { mutableStateOf(false) }
-                    var showConversation by remember { mutableStateOf(saved.isNotEmpty()) }
+                    var showConversation by remember { mutableStateOf(initialConversation.messages.isNotEmpty()) }
+                    var showHistory by remember { mutableStateOf(false) }
                     val listState = rememberLazyListState()
 
                     Scaffold(
@@ -166,7 +177,36 @@ class MainActivity : ComponentActivity() {
                                         Text("دستیار هوش مصنوعی", style = MaterialTheme.typography.labelSmall, color = Color(0xFF9BA8C7))
                                     }
                                 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        onClick = {
+                                            if (!busy) {
+                                                val fresh = store.newConversation()
+                                                activeConversationId = fresh.id
+                                                store.saveActiveConversationId(fresh.id)
+                                                lines = emptyList()
+                                                input = ""
+                                                showConversation = false
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(13.dp),
+                                        color = Color(0xFF282448),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB7A0FF).copy(alpha = 0.25f))
+                                    ) {
+                                        Text("＋ چت جدید", Modifier.padding(horizontal = 10.dp, vertical = 10.dp), color = Color(0xFFE5DFFF), style = MaterialTheme.typography.labelLarge)
+                                    }
+                                    Surface(
+                                        onClick = { if (!busy) showHistory = true },
+                                        shape = RoundedCornerShape(13.dp),
+                                        color = Color(0xFF1A2440),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
+                                    ) {
+                                        Text("☷ سوابق", Modifier.padding(horizontal = 10.dp, vertical = 10.dp), color = Color(0xFFDAE2F5), style = MaterialTheme.typography.labelLarge)
+                                    }
                                     Surface(
                                         onClick = { showPlugins = true },
                                         shape = RoundedCornerShape(13.dp),
@@ -284,8 +324,12 @@ class MainActivity : ComponentActivity() {
                                         lines = previous + ChatLine("user", msg)
                                         showConversation = true
                                         busy = true
+                                        store.saveActiveConversationId(activeConversationId)
+                                        runCatching {
+                                            store.saveConversation(ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines))
+                                        }.onFailure { voiceError = "ذخیره پیام ناموفق بود: ${it.message}" }
+                                        conversations = store.loadConversations()
                                         lifecycleScope.launch {
-                                            runCatching { store.save(lines) }
                                             val memoryStore = YaraMemoryStore(context)
                                             val reply = runCatching {
                                                 when (val command = YaraMemoryCommandParser.parse(msg)) {
@@ -380,7 +424,10 @@ class MainActivity : ComponentActivity() {
 
                                             }.getOrElse { "انجام درخواست ناموفق بود: ${it.message}" }
                                             lines = lines + ChatLine("assistant", reply)
-                                            runCatching { store.save(lines) }
+                                            runCatching {
+                                                store.saveConversation(ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines))
+                                            }
+                                            conversations = store.loadConversations()
                                             if (voiceOutput && !reply.startsWith("اتصال به مدل برقرار نشد:")) voice.speak(reply)
                                             busy = false
                                         }
@@ -408,10 +455,84 @@ class MainActivity : ComponentActivity() {
                     }
                     if (showSettings) SettingsDialog(prefs) { showSettings = false }
                     if (showPlugins) YaraPluginsDialog(YaraPluginManager(context)) { showPlugins = false }
+                    if (showHistory) {
+                        ChatHistoryDialog(
+                            conversations = conversations,
+                            activeConversationId = activeConversationId,
+                            onSelect = { conversation ->
+                                if (!busy) {
+                                    activeConversationId = conversation.id
+                                    store.saveActiveConversationId(conversation.id)
+                                    lines = conversation.messages
+                                    showConversation = lines.isNotEmpty()
+                                    input = ""
+                                    showHistory = false
+                                }
+                            },
+                            close = { showHistory = false }
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ChatHistoryDialog(
+    conversations: List<ChatConversation>,
+    activeConversationId: String,
+    onSelect: (ChatConversation) -> Unit,
+    close: () -> Unit
+) {
+    val history = conversations
+        .filter { it.messages.isNotEmpty() }
+        .sortedByDescending { it.updatedAt }
+
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text("سوابق گفتگوها") },
+        text = {
+            if (history.isEmpty()) {
+                Text("هنوز گفتگویی ذخیره نشده است.")
+            } else {
+                LazyColumn(
+                    Modifier.heightIn(max = 460.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(history, key = { it.id }) { conversation ->
+                        Surface(
+                            onClick = { onSelect(conversation) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (conversation.id == activeConversationId) Color(0xFF34304F) else Color(0xFF1A2940),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (conversation.id == activeConversationId) Color(0xFFB7A0FF) else Color.White.copy(alpha = 0.07f)
+                            )
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text(
+                                    conversation.title,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 2
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "${conversation.messages.size} پیام · " +
+                                        java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale("fa"))
+                                            .format(java.util.Date(conversation.updatedAt)),
+                                    color = Color(0xFF9BA8C7),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = close) { Text("بستن") } }
+    )
 }
 
 @Composable
