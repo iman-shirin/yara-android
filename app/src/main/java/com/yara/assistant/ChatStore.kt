@@ -52,18 +52,16 @@ class ChatStore(context: Context) {
                     val item = array.optJSONObject(index) ?: continue
                     val id = item.optString("id").takeIf { it.isNotBlank() } ?: continue
                     val messages = decodeMessages(item.optJSONArray("messages") ?: JSONArray())
-                    if (messages.isNotEmpty()) {
-                        val title = item.optString("title").takeIf { it.isNotBlank() }
-                            ?: titleFor(messages)
-                        add(
-                            ChatConversation(
-                                id = id,
-                                title = title,
-                                updatedAt = item.optLong("updatedAt", 0L),
-                                messages = messages
-                            )
+                    val title = item.optString("title").takeIf { it.isNotBlank() }
+                        ?: titleFor(messages)
+                    add(
+                        ChatConversation(
+                            id = id,
+                            title = title,
+                            updatedAt = item.optLong("updatedAt", 0L),
+                            messages = messages
                         )
-                    }
+                    )
                 }
             }.sortedByDescending { it.updatedAt }
         }.getOrElse {
