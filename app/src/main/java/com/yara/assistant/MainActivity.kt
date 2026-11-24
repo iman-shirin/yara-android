@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
                 ?: savedConversations.maxByOrNull { it.updatedAt }
                 ?: store.newConversation()
             store.saveActiveConversationId(initialConversation.id)
+            store.saveConversation(initialConversation)
             setContent {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
@@ -186,6 +187,8 @@ class MainActivity : ComponentActivity() {
                                         onClick = {
                                             if (!busy) {
                                                 val fresh = store.newConversation()
+                                                store.saveConversation(fresh)
+                                                conversations = store.loadConversations()
                                                 activeConversationId = fresh.id
                                                 store.saveActiveConversationId(fresh.id)
                                                 lines = emptyList()
