@@ -163,3 +163,120 @@ OmniRoute's MCP/A2A features are separate from YARA's collaboration MCP Gateway.
 The current Desktop Commander device is offline, so Windows installation and local hardware checks cannot be performed remotely. Continue with the phone-only Termux proof of concept when the user is ready to run commands. Do not represent research or documentation as an installation.
 
 Before any production rollout, open a separate implementation PR with code, tests, pinned dependency evidence and a rollback plan. This evaluation document alone does not authorize merge, deployment, payment or provider credential entry.
+
+
+## 9. APInex evaluation (2026-11-25)
+
+### 9.1 What APInex is
+
+Official service: https://apinex.bond/  
+API root: `https://api.apinex.bond/v1`  
+Developer reference: https://apinex.bond/developers  
+Machine-readable reference: https://apinex.bond/llms-full.txt
+
+APInex is a hosted, unified model/API gateway, not an open-source provider router equivalent to OmniRoute. Its documented interfaces include:
+
+- OpenAI-compatible Chat Completions: `POST /v1/chat/completions`.
+- OpenAI Responses: `POST /v1/responses`.
+- Anthropic Messages: `POST /v1/messages`.
+- Model discovery: `GET /v1/models`.
+- Balance and subscription/quota endpoints: `GET /v1/balance`, `GET /v1/subscription`.
+
+It uses one `sk-apx...` credential and a hosted USD wallet for paid models. Its documentation describes free-category models as a separate daily allowance metered by model-specific weights; free-category models do not charge the USD wallet while eligible allowance remains.
+
+### 9.2 Catalog and free-tier caveats
+
+The public Models & Pricing page currently displays 53 model entries and marks 23 entries as Free. The machine-readable `llms-full.txt` currently labels its own catalog as 46 models and enumerates 22 `free/*` entries. These published catalog counts do not agree. Treat the live authenticated `GET /v1/models` response and `GET /v1/subscription` response as the operational source of truth at test time.
+
+The free labels are not a promise of unlimited or unrestricted access:
+
+- Free requests use a shared daily token allowance and model-specific weights (the published reference shows weights from 2x to 5x for listed free models).
+- The published free account rate limit is 15 requests/minute per account, shared across keys.
+- The marketing/pricing pages disagree on the default daily allowance: one page says 3M tokens/day, another says 10M tokens/day. Do not hard-code either value. Read `token_limit`, `tokens_remaining`, `resets_at_utc`, and `allowed` from the authenticated subscription endpoint.
+- Some guides explicitly warn that a model carrying a Free label may have `allowFree: false` or may not be available to a particular account. Check each model's current eligibility and test actual responses.
+- The status page reports per-model operational/high-load/outage states; free models should not be treated as reliable always-on production capacity.
+
+A free model entry is therefore best classified as `listed-free / eligibility-unverified` until an authenticated test confirms the account can call it without consuming USD wallet balance.
+
+### 9.3 Pricing and payment boundaries
+
+APInex is not an entirely free service. Its catalog includes paid pay-as-you-go models, and its pages advertise paid subscriptions that raise the free-category allowance. The developer reference states that $1 credits 1,000,000 balance tokens for wallet accounting, and paid models are billed at published input/output rates. Web research, search, and other tools may have separate per-call charges.
+
+YARA policy for APInex:
+
+1. Do not add funds, buy a subscription, redeem a paid voucher, or upgrade RPM.
+2. Do not enable paid model IDs or paid tools in any automatic route.
+3. Keep paid-wallet balance at zero unless the owner explicitly approves a budget.
+4. Permit only model IDs verified as eligible for the account's free allowance.
+5. Read and record quota before and after each test; assert that wallet balance/spend has not changed.
+6. Set an explicit allowlist rather than accepting every model returned by the catalog.
+7. On 401/402/403/429, quota exhaustion, or ambiguous billing response, fail closed; never retry through a paid model.
+
+### 9.4 Compatibility with OmniRoute and YARA
+
+OmniRoute's current User Guide documents custom OpenAI-compatible provider nodes with a base URL ending in `/v1`, an API type such as Chat Completions or Responses, a unique non-reserved routing prefix, and a separately stored connection credential.
+
+A plausible integration path is:
+
+- Register APInex as a custom OpenAI-compatible provider in OmniRoute.
+- Base URL: `https://api.apinex.bond/v1`.
+- API type for first test: Chat Completions.
+- Use a unique prefix such as `apx` (confirm the final model-id syntax against the pinned OmniRoute release).
+- Store the APInex key only in OmniRoute's credential store; never in YARA source, Android preferences, logs or prompts.
+- Import only explicitly approved free model IDs after account-level eligibility has been checked.
+
+APInex also documents its own Anthropic Messages and OpenAI Responses endpoints. Do not assume OmniRoute's custom-provider node translates all three protocols identically. Test Chat Completions first; test Messages/Responses separately against the pinned OmniRoute version before using Claude Code or Codex compatibility claims.
+
+YARA may also integrate APInex directly through a provider-neutral adapter. The adapter must preserve YARA's cost policy and must not make APInex a dependency of YARA memory, identity, authorization, approvals or task state.
+
+### 9.5 Privacy and provenance
+
+APInex's own integration guide claims that it operates as a zero-retention stateless proxy and does not retain prompt/completion payloads. This is a vendor statement, not an independently verified audit or contractual guarantee. Public privacy/terms details and upstream model provenance have not been independently validated in this evaluation.
+
+Until legal terms, data-processing terms, upstream provider identity, retention, training-use policy, subprocessors, region, deletion, and incident handling are reviewed, do not send sensitive personal data, credentials, private repository content, or YARA memory to APInex. Use synthetic/non-sensitive test prompts only.
+
+Model labels in a third-party catalog (for example names containing GPT, Claude or Gemini) are not proof that the request is served by the official provider's model endpoint. Record provider/model provenance as unverified unless APInex supplies evidence sufficient for the intended use.
+
+### 9.6 Current comparative decision
+
+| Dimension | OmniRoute | APInex |
+|---|---|---|
+| Product type | Self-hosted open-source routing gateway | Hosted multi-model API gateway |
+| Primary role | Provider aggregation, routing, fallback, policy boundary | Single API and account for APInex-hosted models/tools |
+| Credentials | User connects each upstream provider | One APInex API key |
+| Free access | Depends on each connected provider's terms/quota | Published daily weighted free-model allowance; eligibility and quota must be checked |
+| Paid access | Depends on connected providers | Wallet pay-as-you-go and paid quota subscriptions |
+| Hosting/control | Can be self-hosted | Hosted service; separate APInexGate reseller project is not the same as the hosted service |
+| YARA fit | Optional replaceable routing layer | One optional upstream source behind the provider abstraction / OmniRoute |
+
+Decision: retain OmniRoute as the optional, replaceable routing gateway and evaluate APInex as one optional upstream provider. Do not replace OmniRoute with APInex and do not make either mandatory to YARA. This is a design decision only; it does not authorize account creation, key generation, payment, deployment, merge or production traffic.
+
+### 9.7 APInex validation checklist
+
+- [ ] Review APInex Terms and Privacy Policy; obtain clarity on retention, training, subprocessors and upstream provenance.
+- [ ] Create a test account only with owner approval; do not add payment details or wallet funds.
+- [ ] Retrieve authenticated `/v1/models`, `/v1/subscription`, and `/v1/balance`; record exact account eligibility and limits.
+- [ ] Select one low-risk model marked free and verify `allowed=true` before calling.
+- [ ] Run a synthetic non-sensitive Chat Completions request; inspect usage, cost fields, quota decrement and wallet balance.
+- [ ] Verify that a quota-exhausted request fails closed and does not route to paid models.
+- [ ] Test streaming, tool calling, JSON mode, images and long context separately; do not infer these capabilities from marketing tables.
+- [ ] Test APInex as an OmniRoute custom provider node on a pinned release.
+- [ ] Verify the final routed model ID and inspect logs for credential/prompt leakage.
+- [ ] Record latency, uptime, error rate, context behavior and rate-limit response over repeated tests.
+- [ ] Keep the provider disabled by default until tests and policy review pass.
+
+### 9.8 Evidence and unresolved points
+
+Reviewed public sources:
+
+- https://apinex.bond/models
+- https://apinex.bond/pricing
+- https://apinex.bond/developers
+- https://apinex.bond/llms-full.txt
+- https://apinex.bond/status
+- https://apinex.bond/guides/unified-openai-compatible-gateway
+- https://apinex.bond/developers/models/chat
+- https://github.com/cheaper-inference/OmniRoute/wiki/User-Guide
+
+Unresolved: authenticated API behavior, actual per-account free eligibility, daily quota discrepancy, exact model catalog count, data-processing terms, independent security audit, upstream model provenance, and end-to-end compatibility through OmniRoute. No API key was available or used; no API call was sent to APInex.
+
