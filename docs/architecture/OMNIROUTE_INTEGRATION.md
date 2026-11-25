@@ -276,6 +276,8 @@ Reviewed public sources:
 - https://apinex.bond/status
 - https://apinex.bond/guides/unified-openai-compatible-gateway
 - https://apinex.bond/developers/models/chat
+- https://apinex.bond/legal/terms
+- https://apinex.bond/legal/privacy
 - https://github.com/cheaper-inference/OmniRoute/wiki/User-Guide
 
 Unresolved: authenticated API behavior, actual per-account free eligibility, daily quota discrepancy, exact model catalog count, data-processing terms, independent security audit, upstream model provenance, and end-to-end compatibility through OmniRoute. No API key was available or used; no API call was sent to APInex.
