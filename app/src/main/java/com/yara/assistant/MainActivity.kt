@@ -660,6 +660,7 @@ private fun SettingsScreen(
     var geminiModel by remember { mutableStateOf(initialGemini.model) }
     var geminiKey by remember { mutableStateOf(initialGemini.apiKey) }
     var fallback by remember { mutableStateOf(prefs.fallbackEnabled) }
+    var shareMemories by remember { mutableStateOf(prefs.shareMemoriesWithProviders) }
     var primaryProviderId by remember { mutableStateOf(prefs.primaryProviderId) }
     var error by remember { mutableStateOf("") }
 
@@ -761,6 +762,11 @@ private fun SettingsScreen(
                         "امنیت" -> {
                             Text("حریم خصوصی و امنیت", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
                             Text("کلیدهای اتصال مدل‌ها باید فقط در فضای امن محلی برنامه ذخیره شوند. هیچ کلید محرمانه‌ای نباید در گزارش‌ها، گفتگوها یا مخزن عمومی قرار گیرد.", color = Color.White)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = shareMemories, onCheckedChange = { shareMemories = it })
+                                Text("اجازه ارسال حافظه‌های مرتبط به Provider ابری")
+                            }
+                            Text("این گزینه پیش‌فرض خاموش است. با روشن‌کردن آن، حافظه‌های مرتبط با پرسش همراه درخواست برای Provider انتخاب‌شده ارسال می‌شوند.", color = Color(0xFFFFD28A), style = MaterialTheme.typography.bodySmall)
                             Text("مدیریت مجوزها، پشتیبان‌گیری رمزنگاری‌شده و کنترل نشست‌ها در نسخه‌های بعدی تکمیل می‌شود.", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.bodySmall)
                         }
                         "بروزرسانی" -> {
@@ -776,7 +782,10 @@ private fun SettingsScreen(
         confirmButton = {
             TextButton(onClick = {
                 runCatching {
-                    prefs.saveProviders(groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey, fallback, primaryProviderId)
+                    prefs.saveProviders(
+                    groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey,
+                    fallback, primaryProviderId, shareMemories = shareMemories
+                )
                 }.onSuccess { close() }
                     .onFailure { error = it.message ?: "ذخیره تنظیمات ناموفق بود." }
             }) { Text("ذخیره تغییرات") }
