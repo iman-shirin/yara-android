@@ -18,15 +18,16 @@ class YaraProvider(private val prefs: YaraPreferences) {
 
     suspend fun reply(history: List<ChatLine>, message: String, memories: List<String> = emptyList(), webContext: String = ""): String = withContext(Dispatchers.IO) {
         val primary = prefs.primaryProvider
+        val approvedMemories = if (prefs.shareMemoriesWithProviders) memories else emptyList()
         require(primary.apiKey.isNotBlank()) { "ابتدا کلید API سرویس ${primary.name} را در تنظیمات وارد کن." }
         try {
-            return@withContext request(primary, history, message, memories, webContext)
+            return@withContext request(primary, history, message, approvedMemories, webContext)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             val secondary = prefs.fallbackProvider
-            if (!prefs.fallbackEnabled || secondary.apiKey.isBlank() || !isRetryable(error)) throw error
+            if (!prefs.fallbackEnabled || secondary.apiKey.isBlank() || !YaraProviderRetryPolicy.shouldRetry(error)) throw error
             try {
-                return@withContext request(secondary, history, message, memories, webContext)
+                return@withContext request(secondary, history, message, approvedMemories, webContext)
             } catch (fallbackError: Exception) {
                 if (fallbackError is CancellationException) throw fallbackError
                 throw IOException("اتصال سرویس اصلی و جایگزین ناموفق بود. ${primary.name}: ${error.message}; ${secondary.name}: ${fallbackError.message}", fallbackError)
@@ -34,9 +35,6 @@ class YaraProvider(private val prefs: YaraPreferences) {
         }
     }
 
-    private fun isRetryable(error: Exception): Boolean =
-        error is IOException || error.message?.contains("HTTP 408") == true ||
-            error.message?.contains("HTTP 429") == true || error.message?.contains("HTTP 5") == true
 
     private fun request(provider: ProviderConfig, history: List<ChatLine>, message: String, memories: List<String>, webContext: String): String {
         require(provider.apiKey.isNotBlank()) { "کلید API سرویس ${provider.name} وارد نشده است." }

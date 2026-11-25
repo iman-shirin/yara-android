@@ -221,30 +221,12 @@ class MainActivity : ComponentActivity() {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Surface(
-                                        onClick = {
-                                            if (!busy) {
-                                                val fresh = store.newConversation()
-                                                if (!persistConversation(fresh)) return@Surface
-                                                activeConversationId = fresh.id
-                                                store.saveActiveConversationId(fresh.id)
-                                                lines = emptyList()
-                                                input = ""
-                                                showConversation = false
-                                            }
-                                        },
-                                        shape = RoundedCornerShape(13.dp),
-                                        color = Color(0xFF282448),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB7A0FF).copy(alpha = 0.25f))
-                                    ) {
-                                        Text("＋ چت جدید", Modifier.padding(horizontal = 10.dp, vertical = 10.dp), color = Color(0xFFE5DFFF), style = MaterialTheme.typography.labelLarge)
-                                    }
-                                    Surface(
                                         onClick = { if (!busy) showHistory = true },
                                         shape = RoundedCornerShape(13.dp),
                                         color = Color(0xFF1A2440),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
                                     ) {
-                                        Text("☷ سوابق", Modifier.padding(horizontal = 10.dp, vertical = 10.dp), color = Color(0xFFDAE2F5), style = MaterialTheme.typography.labelLarge)
+                                        Text("☷ گفتگوها", Modifier.padding(horizontal = 12.dp, vertical = 10.dp), color = Color(0xFFDAE2F5), style = MaterialTheme.typography.labelLarge)
                                     }
                                     Surface(
                                         onClick = { showSettings = true },
@@ -472,18 +454,14 @@ class MainActivity : ComponentActivity() {
                             if (voiceError != null) {
                                 Text(voiceError!!, color = Color(0xFFFF9C9C), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("پاسخ صوتی", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.labelMedium)
-                                Switch(checked = voiceOutput, onCheckedChange = { voiceOutput = it })
-                                if (speaking) {
-                                    TextButton(onClick = { voice.stopSpeaking() }) {
-                                        Text("توقف صدا", color = Color(0xFFFF9C9C))
-                                    }
+                            if (speaking) {
+                                TextButton(onClick = { voice.stopSpeaking() }) {
+                                    Text("توقف پاسخ صوتی", color = Color(0xFFFF9C9C))
                                 }
                             }
                         }
                     }
-                    if (showSettings) SettingsDialog(prefs) { showSettings = false }
+                    if (showSettings) SettingsScreen(prefs, voiceOutput, { voiceOutput = it }) { showSettings = false }
                     if (showHistory) {
                         ChatHistoryDialog(
                             conversations = conversations,
@@ -496,6 +474,19 @@ class MainActivity : ComponentActivity() {
                                     showConversation = lines.isNotEmpty()
                                     input = ""
                                     showHistory = false
+                                }
+                            },
+                            onNewConversation = {
+                                if (!busy) {
+                                    val fresh = store.newConversation()
+                                    if (persistConversation(fresh)) {
+                                        activeConversationId = fresh.id
+                                        store.saveActiveConversationId(fresh.id)
+                                        lines = emptyList()
+                                        input = ""
+                                        showConversation = false
+                                        showHistory = false
+                                    }
                                 }
                             },
                             close = { showHistory = false }
@@ -512,6 +503,7 @@ private fun ChatHistoryDialog(
     conversations: List<ChatConversation>,
     activeConversationId: String,
     onSelect: (ChatConversation) -> Unit,
+    onNewConversation: () -> Unit,
     close: () -> Unit
 ) {
     val history = conversations
@@ -560,7 +552,12 @@ private fun ChatHistoryDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = close) { Text("بستن") } }
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onNewConversation) { Text("＋ چت جدید") }
+                TextButton(onClick = close) { Text("بستن") }
+            }
+        }
     )
 }
 
@@ -646,7 +643,14 @@ private fun YaraAvatar(isSpeaking: Boolean, mouthLevel: Float, hasConversation: 
 }
 
 @Composable
-private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
+private fun SettingsScreen(
+    prefs: YaraPreferences,
+    voiceOutput: Boolean,
+    onVoiceOutputChange: (Boolean) -> Unit,
+    close: () -> Unit
+) {
+    val sections = listOf("هوش مصنوعی", "افزونه‌ها", "صدا", "اعلان‌ها", "امنیت", "بروزرسانی")
+    var selectedSection by remember { mutableStateOf("هوش مصنوعی") }
     val initialGroq = prefs.groq
     val initialGemini = prefs.gemini
     var groqBase by remember { mutableStateOf(initialGroq.baseUrl) }
@@ -656,52 +660,136 @@ private fun SettingsDialog(prefs: YaraPreferences, close: () -> Unit) {
     var geminiModel by remember { mutableStateOf(initialGemini.model) }
     var geminiKey by remember { mutableStateOf(initialGemini.apiKey) }
     var fallback by remember { mutableStateOf(prefs.fallbackEnabled) }
+    var shareMemories by remember { mutableStateOf(prefs.shareMemoriesWithProviders) }
     var primaryProviderId by remember { mutableStateOf(prefs.primaryProviderId) }
     var error by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = close,
-        title = { Text("اتصال سرویس‌های هوش مصنوعی") },
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("تنظیمات یارا")
+                Text("تنظیمات در بخش‌های جداگانه", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.labelSmall)
+            }
+        },
         text = {
             Column(
-                Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().heightIn(max = 590.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("انتخاب سرویس اصلی", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = primaryProviderId == "groq", onClick = { primaryProviderId = "groq" })
-                    Text("Groq")
-                    Spacer(Modifier.width(18.dp))
-                    RadioButton(selected = primaryProviderId == "gemini", onClick = { primaryProviderId = "gemini" })
-                    Text("Google Gemini")
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    sections.forEach { section ->
+                        FilterChip(
+                            selected = selectedSection == section,
+                            onClick = { selectedSection = section },
+                            label = { Text(section) }
+                        )
+                    }
                 }
-                Text("تنظیمات Groq", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
-                OutlinedTextField(groqBase, { groqBase = it }, label = { Text("نشانی پایه Groq") }, singleLine = true)
-                OutlinedTextField(groqModel, { groqModel = it }, label = { Text("مدل Groq") }, singleLine = true)
-                OutlinedTextField(groqKey, { groqKey = it }, label = { Text("کلید API Groq") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-
-                Divider()
-                Text("تنظیمات Google Gemini", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
-                OutlinedTextField(geminiBase, { geminiBase = it }, label = { Text("نشانی پایه Gemini") }, singleLine = true)
-                OutlinedTextField(geminiModel, { geminiModel = it }, label = { Text("مدل Gemini") }, singleLine = true)
-                OutlinedTextField(geminiKey, { geminiKey = it }, label = { Text("کلید API Gemini") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = fallback, onCheckedChange = { fallback = it })
-                    Text("استفاده از ${if (primaryProviderId == "groq") "Gemini" else "Groq"} هنگام اختلال سرویس اصلی")
+                Divider(color = Color.White.copy(alpha = 0.08f))
+                Column(
+                    Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    when (selectedSection) {
+                        "هوش مصنوعی" -> {
+                            Text("مدیریت مدل‌ها و اتصال‌ها", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                            Text("سرویس اصلی", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = primaryProviderId == "groq", onClick = { primaryProviderId = "groq" })
+                                Text("Groq")
+                                Spacer(Modifier.width(12.dp))
+                                RadioButton(selected = primaryProviderId == "gemini", onClick = { primaryProviderId = "gemini" })
+                                Text("Google Gemini")
+                            }
+                            Text("Groq", color = Color(0xFF70D9D0), fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(groqBase, { groqBase = it }, modifier = Modifier.fillMaxWidth(), label = { Text("نشانی پایه Groq") }, singleLine = true)
+                            OutlinedTextField(groqModel, { groqModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("مدل Groq") }, singleLine = true)
+                            OutlinedTextField(groqKey, { groqKey = it }, modifier = Modifier.fillMaxWidth(), label = { Text("کلید API Groq") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                            Divider()
+                            Text("Google Gemini", color = Color(0xFF70D9D0), fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(geminiBase, { geminiBase = it }, modifier = Modifier.fillMaxWidth(), label = { Text("نشانی پایه Gemini") }, singleLine = true)
+                            OutlinedTextField(geminiModel, { geminiModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("مدل Gemini") }, singleLine = true)
+                            OutlinedTextField(geminiKey, { geminiKey = it }, modifier = Modifier.fillMaxWidth(), label = { Text("کلید API Gemini") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = fallback, onCheckedChange = { fallback = it })
+                                Text("استفاده از مدل جایگزین هنگام اختلال")
+                            }
+                            Text("کلیدها در فضای امن محلی برنامه نگهداری می‌شوند؛ آن‌ها را در چت یا مخزن کد وارد نکن.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9BA8C7))
+                        }
+                        "افزونه‌ها" -> {
+                            Text("افزونه‌ها و قابلیت‌های یارا", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                            Text("این بخش محل مدیریت افزونه‌ها خواهد بود. قابلیت‌های زیر اکنون در برنامه موجودند؛ هنوز سامانه نصب/حذف افزونه‌های مستقل به نسخه Android متصل نشده است.", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.bodySmall)
+                            listOf(
+                                "حافظه بلندمدت" to "ماژول داخلی",
+                                "یادآوری‌ها و اعلان‌ها" to "ماژول داخلی",
+                                "مدیریت کارها" to "ماژول داخلی",
+                                "جستجوی اینترنت" to "ماژول داخلی",
+                                "ورودی و خروجی صوتی" to "ماژول داخلی"
+                            ).forEach { (name, status) ->
+                                Surface(
+                                    color = Color(0xFF1A2940),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.07f))
+                                ) {
+                                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(name, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                                        Text(status, color = Color(0xFF70D9D0), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                            Text("اتصال فروشگاه افزونه‌ها، فعال/غیرفعال‌سازی و نصب مستقل در مرحله بعدی توسعه اضافه می‌شود؛ در این نسخه هیچ قابلیت فعالی حذف نشده است.", color = Color(0xFFFFD28A), style = MaterialTheme.typography.bodySmall)
+                        }
+                        "صدا" -> {
+                            Text("تنظیمات گفتار", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("پاسخ صوتی یارا", color = Color.White)
+                                    Text("خواندن پاسخ‌ها با صدای بلند", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = voiceOutput, onCheckedChange = onVoiceOutputChange)
+                            }
+                            Text("برای ورودی صوتی، از دکمه میکروفون در صفحه گفتگو استفاده کن.", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.bodySmall)
+                        }
+                        "اعلان‌ها" -> {
+                            Text("یادآوری‌ها و اعلان‌ها", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                            Text("زمان‌بندی یادآوری‌ها در حال حاضر از طریق گفت‌وگو انجام می‌شود. مجوز اعلان را می‌توانی از تنظیمات Android برای برنامه یارا مدیریت کنی.", color = Color.White)
+                            Text("مدیریت کامل یادآوری‌ها و انتخاب صدای اعلان در پنل تنظیمات آینده اضافه خواهد شد.", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.bodySmall)
+                        }
+                        "امنیت" -> {
+                            Text("حریم خصوصی و امنیت", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                            Text("کلیدهای اتصال مدل‌ها باید فقط در فضای امن محلی برنامه ذخیره شوند. هیچ کلید محرمانه‌ای نباید در گزارش‌ها، گفتگوها یا مخزن عمومی قرار گیرد.", color = Color.White)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = shareMemories, onCheckedChange = { shareMemories = it })
+                                Text("اجازه ارسال حافظه‌های مرتبط به Provider ابری")
+                            }
+                            Text("این گزینه پیش‌فرض خاموش است. با روشن‌کردن آن، حافظه‌های مرتبط با پرسش همراه درخواست برای Provider انتخاب‌شده ارسال می‌شوند.", color = Color(0xFFFFD28A), style = MaterialTheme.typography.bodySmall)
+                            Text("مدیریت مجوزها، پشتیبان‌گیری رمزنگاری‌شده و کنترل نشست‌ها در نسخه‌های بعدی تکمیل می‌شود.", color = Color(0xFF9BA8C7), style = MaterialTheme.typography.bodySmall)
+                        }
+                        "بروزرسانی" -> {
+                            Text("بروزرسانی یارا", color = Color(0xFF70D9D0), fontWeight = FontWeight.Bold)
+                            Text("هدف این بخش دریافت نسخه جدید، اعتبارسنجی امضا و نصب به‌روزرسانی بدون حذف برنامه یا پاک شدن تنظیمات است.", color = Color.White)
+                            Text("سامانه به‌روزرسانی هنوز فعال نشده است؛ تا زمان تکمیل امضای پایدار و انتشار امن، نصب نسخه‌های آزمایشی به‌صورت دستی انجام می‌شود.", color = Color(0xFFFFD28A), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
-                Text("کلیدها به‌صورت رمزنگاری‌شده در Android Keystore نگهداری می‌شوند. کلیدها را در چت یا مخزن کد منتشر نکن.", style = MaterialTheme.typography.bodySmall)
-                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 runCatching {
-                    prefs.saveProviders(groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey, fallback, primaryProviderId)
+                    prefs.saveProviders(
+                    groqBase, groqModel, groqKey, geminiBase, geminiModel, geminiKey,
+                    fallback, primaryProviderId, shareMemories = shareMemories
+                )
                 }.onSuccess { close() }
                     .onFailure { error = it.message ?: "ذخیره تنظیمات ناموفق بود." }
-            }) { Text("ذخیره") }
+            }) { Text("ذخیره تغییرات") }
         },
-        dismissButton = { TextButton(onClick = close) { Text("انصراف") } }
+        dismissButton = { TextButton(onClick = close) { Text("بستن") } }
     )
 }
