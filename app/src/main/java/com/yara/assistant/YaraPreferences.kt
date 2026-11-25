@@ -36,7 +36,8 @@ class YaraPreferences(context: Context) {
         secureSecrets.read("gemini_api_key")
     )
 
-    val fallbackEnabled: Boolean get() = preferences.getBoolean("fallback_enabled", true)
+    val fallbackEnabled: Boolean get() = preferences.getBoolean("fallback_enabled", false)
+    val shareMemoriesWithProviders: Boolean get() = preferences.getBoolean("share_memories_with_providers", false)
     val primaryProviderId: String get() = preferences.getString("primary_provider", "groq")?.takeIf { it == "groq" || it == "gemini" } ?: "groq"
     val primaryProvider: ProviderConfig get() = YaraProviderRouter.primary(primaryProviderId, groq, gemini)
     val fallbackProvider: ProviderConfig get() = YaraProviderRouter.fallback(primaryProviderId, groq, gemini)
@@ -46,7 +47,8 @@ class YaraPreferences(context: Context) {
 
     fun saveProviders(groqBase: String, groqModel: String, groqKey: String,
                       geminiBase: String, geminiModel: String, geminiKey: String, fallback: Boolean,
-                      primaryProviderId: String) {
+                      primaryProviderId: String,
+                      shareMemories: Boolean = shareMemoriesWithProviders) {
         require(groqBase.startsWith("https://", true)) { "نشانی Groq باید با HTTPS شروع شود." }
         require(groqModel.isNotBlank()) { "نام مدل Groq خالی است." }
         require(geminiBase.startsWith("https://", true)) { "نشانی Gemini باید با HTTPS شروع شود." }
@@ -56,7 +58,8 @@ class YaraPreferences(context: Context) {
         secureSecrets.write("gemini_api_key", geminiKey.trim())
         preferences.edit().putString("base", groqBase.trim()).putString("model", groqModel.trim())
             .putString("gemini_base", geminiBase.trim()).putString("gemini_model", geminiModel.trim())
-            .putBoolean("fallback_enabled", fallback).putString("primary_provider", primaryProviderId).remove("key").apply()
+            .putBoolean("fallback_enabled", fallback).putBoolean("share_memories_with_providers", shareMemories)
+            .putString("primary_provider", primaryProviderId).remove("key").apply()
     }
 
     fun save(base: String, model: String, key: String) =
