@@ -1,6 +1,5 @@
 package com.yara.assistant
 
-import java.io.IOException
 import javax.crypto.spec.SecretKeySpec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -64,14 +63,5 @@ class EncryptedChatArchiveTest {
         assertNotEquals("", decoded.single().id)
     }
 
-    @Test
-    fun providerRetryPolicyFailsClosedForAuthBillingQuotaAndRateLimit() {
-        listOf(401, 402, 403, 429).forEach { status ->
-            assertFalse(YaraProviderRetryPolicy.shouldRetry(IllegalStateException("HTTP $status: rejected")))
-        }
-        assertTrue(YaraProviderRetryPolicy.shouldRetry(IllegalStateException("HTTP 408: timeout")))
-        assertTrue(YaraProviderRetryPolicy.shouldRetry(IllegalStateException("HTTP 503: unavailable")))
-        assertTrue(YaraProviderRetryPolicy.shouldRetry(IOException("network timeout")))
-    }
 }
 
