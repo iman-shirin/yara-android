@@ -4,6 +4,9 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { createPrivateKey, sign } from "node:crypto";
+import { Transform } from "node:stream";
+import { createFixedWindowLimiter } from "../shared/rate-limit.mjs";
+import { agentHasScope, normalizeAgentScopes, requiredToolScope } from "../shared/permissions.mjs";
 import { assertAgentBranch, assertWritablePath, hashToken, issueAgentToken, safeEqual, validAgentId, validRepoPart, validRepoPath } from "./security.mjs";
 import { migrateCollaboration, registerCollaborationRoutes, validateTaskPayload, validateMessagePayload } from "./collaboration.mjs";
 
@@ -14,10 +17,17 @@ for (const key of required) {
   if (!env[key]) throw new Error(`Missing required environment variable: ${key}`);
 }
 if (env.YARA_BOOTSTRAP_TOKEN.length < 32) throw new Error("YARA_BOOTSTRAP_TOKEN must contain at least 32 characters");
+const production = env.NODE_ENV === "production";
+if (production && (env.PGSSLMODE?.toLowerCase() === "disable" || env.PGSSL_REJECT_UNAUTHORIZED?.toLowerCase() === "false")) {
+  throw new Error("TLS certificate verification cannot be disabled in production");
+}
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+const requestLimiter = createFixedWindowLimiter({ limit: 120, windowMs: 60_000 });
+const deniedAuditLimiter = createFixedWindowLimiter({ limit: 1, windowMs: 60_000 });
 
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
-  ssl: env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: env.PGSSL_REJECT_UNAUTHORIZED !== "false" },
+  ssl: env.PGSSLMODE?.toLowerCase() === "disable" ? false : { rejectUnauthorized: env.PGSSL_REJECT_UNAUTHORIZED?.toLowerCase() !== "false" },
   max: Number(env.PG_POOL_MAX ?? 10),
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000
@@ -30,7 +40,32 @@ if (env.NODE_ENV === "production" && configuredHosts.length === 0) {
 const allowedHosts = [...new Set(["localhost", "127.0.0.1", ...configuredHosts])];
 const app = createMcpFastifyApp({ host: env.HOST ?? "0.0.0.0", allowedHosts });
 app.server.requestTimeout = 15000;
-
+app.addHook("onRequest", async (request, reply) => {
+  const rate = requestLimiter.consume(request.ip);
+  if (!rate.allowed) return reply.header("retry-after", String(rate.retryAfterSeconds)).code(429).send({ error: "rate_limited" });
+  const contentLength = request.headers["content-length"];
+  if (contentLength !== undefined) {
+    if (!/^[0-9]+$/.test(String(contentLength))) return reply.code(400).send({ error: "invalid_content_length" });
+    if (Number(contentLength) > MAX_REQUEST_BODY_BYTES) return reply.code(413).send({ error: "request_too_large" });
+  }
+});
+app.addHook("preParsing", (request, reply, payload, done) => {
+  let received = 0;
+  const limiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      received += chunk.length;
+      limiter.receivedEncodedLength = received;
+      if (received > MAX_REQUEST_BODY_BYTES) {
+        callback(Object.assign(new Error("request_too_large"), { statusCode: 413 }));
+        return;
+      }
+      callback(null, chunk);
+    }
+  });
+  limiter.receivedEncodedLength = 0;
+  payload.pipe(limiter);
+  done(null, limiter);
+});
 const githubConfigKeys = ["GITHUB_APP_ID", "GITHUB_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY_BASE64"];
 const githubConfigPresent = githubConfigKeys.filter((key) => Boolean(env[key]));
 if (githubConfigPresent.length > 0 && githubConfigPresent.length !== githubConfigKeys.length) {
@@ -51,8 +86,10 @@ async function migrate() {
       token_hash text NOT NULL UNIQUE,
       active boolean NOT NULL DEFAULT true,
       created_at timestamptz NOT NULL DEFAULT now(),
-      revoked_at timestamptz
+      revoked_at timestamptz,
+      scopes text[] NOT NULL DEFAULT ARRAY['project:read']::text[]
     );
+    ALTER TABLE yara_agents ADD COLUMN IF NOT EXISTS scopes text[] NOT NULL DEFAULT ARRAY['project:read']::text[];
     CREATE TABLE IF NOT EXISTS yara_audit (
       id bigserial PRIMARY KEY,
       occurred_at timestamptz NOT NULL DEFAULT now(),
@@ -80,6 +117,11 @@ async function audit(agentId, action, resource, outcome, requestId, details = {}
   );
 }
 
+async function auditDenied(request, action, resource) {
+  if (!deniedAuditLimiter.consume(request.ip).allowed) return;
+  await audit(null, action, resource, "denied", request.id).catch(() => {});
+}
+
 function parseBearer(header) {
   if (typeof header !== "string" || !header.startsWith("Bearer ")) return null;
   return header.slice(7).trim() || null;
@@ -89,14 +131,23 @@ async function authenticate(request, reply) {
   const token = parseBearer(request.headers.authorization);
   if (!token) return reply.code(401).send({ error: "unauthorized" });
   const result = await pool.query(
-    "SELECT id, display_name FROM yara_agents WHERE token_hash=$1 AND active=true",
+    "SELECT id, display_name, scopes FROM yara_agents WHERE token_hash=$1 AND active=true",
     [hashToken(token)]
   );
   if (result.rowCount !== 1) {
-    await audit(null, "agent.authenticate", "gateway", "denied", request.id);
+    await auditDenied(request, "agent.authenticate", "gateway");
     return reply.code(401).send({ error: "unauthorized" });
   }
   request.agent = result.rows[0];
+  if (!Array.isArray(request.agent.scopes)) request.agent.scopes = [];
+}
+
+function authorize(scope) {
+  return async (request, reply) => {
+    if (agentHasScope(request.agent, scope)) return;
+    await audit(request.agent?.id ?? null, "authorization.denied", request.routeOptions.url, "denied", request.id, { requiredScope: scope }).catch(() => {});
+    return reply.code(403).send({ error: "forbidden_scope" });
+  };
 }
 
 function appJwt() {
@@ -165,6 +216,8 @@ function validateRepo(owner, repo, path) {
 }
 
 async function callMcpTool(agent, name, args, requestId) {
+  const requiredScope = requiredToolScope(name);
+  if (!agentHasScope(agent, requiredScope)) throw new Error("forbidden_scope");
   if (name === "yara_task_create") {
     const parsed = validateTaskPayload(args);
     if (!parsed.ok) throw new Error(parsed.error);
@@ -185,15 +238,15 @@ async function callMcpTool(agent, name, args, requestId) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=now(),updated_at=now() WHERE status='running' AND lease_until < now() AND attempts >= max_attempts");
-      await client.query("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempts < max_attempts");
+      await client.query("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE status='running' AND lease_until <= clock_timestamp() AND attempts >= max_attempts");
+      await client.query("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE status='running' AND lease_until <= clock_timestamp() AND attempts < max_attempts");
       const selected = await client.query(
         "SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=$1) AND attempts < max_attempts ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         [agent.id]
       );
       if (!selected.rowCount) { await client.query("COMMIT"); return { task: null }; }
       const updated = await client.query(
-        "UPDATE yara_tasks SET status='running',assigned_to=$2,attempts=attempts+1,lease_until=now()+interval '3 minutes',updated_at=now() WHERE id=$1 RETURNING *",
+        "UPDATE yara_tasks SET status='running',assigned_to=$2,attempts=attempts+1,lease_until=clock_timestamp()+interval '3 minutes',updated_at=clock_timestamp() WHERE id=$1 RETURNING *",
         [selected.rows[0].id, agent.id]
       );
       await client.query("COMMIT");
@@ -216,7 +269,7 @@ async function callMcpTool(agent, name, args, requestId) {
   }
   if (name === "yara_task_heartbeat") {
     const result = await pool.query(
-      "UPDATE yara_tasks SET lease_until=now()+interval '3 minutes',updated_at=now() WHERE id=$1 AND assigned_to=$2 AND status='running' RETURNING id,lease_until",
+      "UPDATE yara_tasks SET lease_until=clock_timestamp()+interval '3 minutes',updated_at=clock_timestamp() WHERE id=$1 AND assigned_to=$2 AND status='running' AND lease_until>clock_timestamp() RETURNING id,lease_until",
       [args.taskId, agent.id]
     );
     if (!result.rowCount) throw new Error("active_task_not_found");
@@ -230,14 +283,18 @@ async function callMcpTool(agent, name, args, requestId) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const task = await client.query("SELECT * FROM yara_tasks WHERE id=$1 FOR UPDATE", [args.taskId]);
-      if (!task.rowCount || task.rows[0].assigned_to !== agent.id || task.rows[0].status !== "running") throw new Error("active_task_not_found");
+      const task = await client.query(
+        "SELECT * FROM yara_tasks WHERE id=$1 AND assigned_to=$2 AND status='running' AND lease_until>clock_timestamp() FOR UPDATE",
+        [args.taskId, agent.id]
+      );
+      if (!task.rowCount) throw new Error("active_task_not_found");
       const retry = outcome === "failed" && task.rows[0].attempts < task.rows[0].max_attempts;
       const status = outcome === "completed" ? "completed" : retry ? "queued" : "failed";
       const updated = await client.query(
-        "UPDATE yara_tasks SET status=$2,assigned_to=CASE WHEN $2='queued' THEN NULL ELSE assigned_to END,result=$3,lease_until=NULL,updated_at=now(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE NULL END WHERE id=$1 RETURNING *",
-        [args.taskId, status, JSON.stringify(resultBody)]
+        "UPDATE yara_tasks SET status=$2,assigned_to=CASE WHEN $2='queued' THEN NULL ELSE assigned_to END,result=$3,lease_until=NULL,updated_at=clock_timestamp(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN clock_timestamp() ELSE NULL END WHERE id=$1 AND assigned_to=$4 AND status='running' AND lease_until>clock_timestamp() RETURNING *",
+        [args.taskId, status, JSON.stringify(resultBody), agent.id]
       );
+      if (!updated.rowCount) throw new Error("active_task_not_found");
       await client.query(
         "INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body) VALUES(gen_random_uuid(),$1,$2,$3,'result',$4)",
         [args.taskId, agent.id, task.rows[0].created_by, JSON.stringify({ outcome, retryScheduled: retry, result: resultBody })]
@@ -348,10 +405,13 @@ const mcpHandler = createMcpHandler((ctx) => {
   const auth = ctx.authInfo ?? {};
   const agentId = auth.clientId;
   if (!validAgentId(agentId)) throw new Error("unauthorized");
-  const agent = { id: agentId, display_name: auth.displayName ?? agentId };
+  const agent = { id: agentId, display_name: auth.displayName ?? agentId, scopes: Array.isArray(auth.scopes) ? auth.scopes : [] };
   const server = new McpServer({ name: "yara-universal-gateway", version: "0.2.0" });
 
-  const register = (name, options) => server.registerTool(name, options, async (args) => {
+  const register = (name, options) => {
+    const scope = requiredToolScope(name);
+    if (!scope || !agentHasScope(agent, scope)) return;
+    return server.registerTool(name, options, async (args) => {
     try {
       const result = await callMcpTool(agent, name, args, auth.requestId ?? null);
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
@@ -360,6 +420,7 @@ const mcpHandler = createMcpHandler((ctx) => {
       return { content: [{ type: "text", text: error.message }], isError: true };
     }
   });
+  };
 
   register("yara_task_create", {
     description: "Create a durable task for the YARA agent pool or assign it to one active agent.",
@@ -477,7 +538,7 @@ app.all("/mcp", { preHandler: authenticate }, async (request, reply) => {
   request.raw.auth = {
     token: hashToken(token),
     clientId: request.agent.id,
-    scopes: ["project:read", "branch:write", "pull_request:create"],
+    scopes: request.agent.scopes,
     displayName: request.agent.display_name,
     requestId: request.id
   };
@@ -493,30 +554,32 @@ app.get("/healthz", async (_request, reply) => {
 app.post("/v1/admin/agents", async (request, reply) => {
   const supplied = parseBearer(request.headers.authorization);
   if (!supplied || !safeEqual(supplied, env.YARA_BOOTSTRAP_TOKEN)) {
-    await audit(null, "agent.provision", "agent-registry", "denied", request.id);
+    await auditDenied(request, "agent.provision", "agent-registry");
     return reply.code(401).send({ error: "unauthorized" });
   }
   const { id, displayName } = request.body ?? {};
-  if (!validAgentId(id) || typeof displayName !== "string" || displayName.trim().length < 1 || displayName.length > 100) {
+  const scopes = normalizeAgentScopes(request.body?.scopes);
+  if (!validAgentId(id) || typeof displayName !== "string" || displayName.trim().length < 1 || displayName.length > 100 || !scopes) {
     return reply.code(400).send({ error: "invalid_agent" });
   }
   const token = issueAgentToken();
   try {
     await pool.query(
-      "INSERT INTO yara_agents(id, display_name, token_hash) VALUES($1,$2,$3)",
-      [id, displayName.trim(), hashToken(token)]
+      "INSERT INTO yara_agents(id, display_name, token_hash, scopes) VALUES($1,$2,$3,$4)",
+      [id, displayName.trim(), hashToken(token), scopes]
     );
   } catch (error) {
     if (error.code === "23505") return reply.code(409).send({ error: "agent_id_already_exists" });
     throw error;
   }
-  await audit("owner", "agent.provision", id, "success", request.id, { capabilities: ["project:read", "branch:write", "pull_request:create"] });
+  await audit("owner", "agent.provision", id, "success", request.id, { scopes });
   return reply.code(201).send({ id, token, warning: "Store this token securely. It will not be shown again." });
 });
 
 app.post("/v1/admin/agents/:id/rotate", async (request, reply) => {
   const supplied = parseBearer(request.headers.authorization);
   if (!supplied || !safeEqual(supplied, env.YARA_BOOTSTRAP_TOKEN)) {
+    await auditDenied(request, "agent.token.rotate", request.params.id);
     return reply.code(401).send({ error: "unauthorized" });
   }
   const token = issueAgentToken();
@@ -533,6 +596,7 @@ app.post("/v1/admin/agents/:id/rotate", async (request, reply) => {
 app.post("/v1/admin/agents/:id/revoke", async (request, reply) => {
   const supplied = parseBearer(request.headers.authorization);
   if (!supplied || !safeEqual(supplied, env.YARA_BOOTSTRAP_TOKEN)) {
+    await auditDenied(request, "agent.revoke", request.params.id);
     return reply.code(401).send({ error: "unauthorized" });
   }
   const result = await pool.query(
@@ -543,7 +607,7 @@ app.post("/v1/admin/agents/:id/revoke", async (request, reply) => {
   return result.rowCount ? reply.send({ id: request.params.id, revoked: true }) : reply.code(404).send({ error: "agent_not_found" });
 });
 
-app.post("/v1/projects/:owner/:repo/branches", { preHandler: authenticate }, async (request, reply) => {
+app.post("/v1/projects/:owner/:repo/branches", { preHandler: [authenticate, authorize("branch:write")] }, async (request, reply) => {
   const { owner, repo } = request.params;
   if (`${owner}/${repo}` !== env.GITHUB_REPOSITORY) return reply.code(403).send({ error: "repository_not_allowed" });
   const { name } = request.body ?? {};
@@ -568,12 +632,12 @@ app.post("/v1/projects/:owner/:repo/branches", { preHandler: authenticate }, asy
   return reply.code(201).send({ branch, base: "main", commitSha: created.object.sha });
 });
 
-app.get("/v1/agents/me", { preHandler: authenticate }, async (request) => {
+app.get("/v1/agents/me", { preHandler: [authenticate, authorize("project:read")] }, async (request) => {
   await audit(request.agent.id, "agent.identity.read", request.agent.id, "success", request.id);
   return { id: request.agent.id, displayName: request.agent.display_name, status: "active" };
 });
 
-app.get("/v1/projects/:owner/:repo/files", { preHandler: authenticate }, async (request, reply) => {
+app.get("/v1/projects/:owner/:repo/files", { preHandler: [authenticate, authorize("project:read")] }, async (request, reply) => {
   const { owner, repo } = request.params;
   const path = request.query.path;
   validateRepo(owner, repo, path);
@@ -583,7 +647,7 @@ app.get("/v1/projects/:owner/:repo/files", { preHandler: authenticate }, async (
   return { path, sha: data.sha, encoding: data.encoding, content: Buffer.from(data.content, "base64").toString("utf8") };
 });
 
-app.put("/v1/projects/:owner/:repo/files", { preHandler: authenticate }, async (request, reply) => {
+app.put("/v1/projects/:owner/:repo/files", { preHandler: [authenticate, authorize("branch:write")] }, async (request, reply) => {
   const { owner, repo } = request.params;
   const { path, branch, content, message, sha } = request.body ?? {};
   validateRepo(owner, repo, path);
@@ -615,7 +679,7 @@ app.put("/v1/projects/:owner/:repo/files", { preHandler: authenticate }, async (
   return reply.code(201).send({ path, branch, commitSha: data.commit?.sha, contentSha: data.content?.sha });
 });
 
-app.post("/v1/projects/:owner/:repo/pull-requests", { preHandler: authenticate }, async (request, reply) => {
+app.post("/v1/projects/:owner/:repo/pull-requests", { preHandler: [authenticate, authorize("pull_request:create")] }, async (request, reply) => {
   const { owner, repo } = request.params;
   if (`${owner}/${repo}` !== env.GITHUB_REPOSITORY) return reply.code(403).send({ error: "repository_not_allowed" });
   const { head, title, body = "", base = "main" } = request.body ?? {};
@@ -646,7 +710,7 @@ app.setErrorHandler(async (error, request, reply) => {
 
 await migrate();
 await migrateCollaboration(pool);
-registerCollaborationRoutes(app, { pool, authenticate, audit });
+registerCollaborationRoutes(app, { pool, authenticate, audit, authorize });
 const port = Number(env.PORT ?? 8080);
 await app.listen({ host: env.HOST ?? "0.0.0.0", port });
 
