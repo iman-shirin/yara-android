@@ -36,9 +36,14 @@ if (!databaseUrl) {
     const authenticate = async (request, reply) => {
       const id = request.headers["x-agent-id"];
       if (!["agent-test-a", "agent-test-b", "agent-test-c"].includes(id)) return reply.code(401).send({ error: "unauthorized" });
-      request.agent = { id, display_name: id };
+      const scopes = request.headers["x-agent-scopes"]?.split(",") ?? ["project:read","task:read","task:write","message:read","message:write"];
+      request.agent = { id, display_name: id, scopes };
     };
-    registerCollaborationRoutes(app, { pool, authenticate, audit: async () => {} });
+    const authorize = (scope) => async (request, reply) => {
+      if (request.agent.scopes.includes(scope)) return;
+      return reply.code(403).send({ error: "forbidden_scope" });
+    };
+    registerCollaborationRoutes(app, { pool, authenticate, audit: async () => {}, authorize });
     await app.ready();
   });
 
@@ -54,6 +59,18 @@ if (!databaseUrl) {
 
   const call = (method, url, agent, payload) => app.inject({
     method, url, headers: { "x-agent-id": agent }, ...(payload === undefined ? {} : { payload })
+  });
+
+  test("collaboration routes enforce least-privilege scopes", async () => {
+    const denied = await app.inject({
+      method: "POST", url: "/v1/tasks", headers: { "x-agent-id": "agent-test-a", "x-agent-scopes": "project:read" },
+      payload: { title: "Must be denied", description: "Read-only agents cannot create tasks." }
+    });
+    assert.equal(denied.statusCode, 403);
+    const readable = await app.inject({
+      method: "GET", url: "/v1/tasks", headers: { "x-agent-id": "agent-test-a", "x-agent-scopes": "task:read" }
+    });
+    assert.equal(readable.statusCode, 200);
   });
 
   test("tasks are claimed once, heartbeated, completed, retried after lease expiry, and reported", async () => {
@@ -121,6 +138,21 @@ if (!databaseUrl) {
     ]);
     assert.equal(claims.filter((response) => response.statusCode === 200 && response.json().task?.id === concurrentId).length, 1);
     assert.equal(claims.filter((response) => response.statusCode === 204).length, 1);
+
+    const staleTask = await call("POST", "/v1/tasks", "agent-test-a", {
+      title: "Expired lease protection", description: "Stale workers must not heartbeat or complete."
+    });
+    const staleId = staleTask.json().task.id;
+    const staleClaim = await call("POST", "/v1/tasks/claim", "agent-test-a");
+    assert.equal(staleClaim.json().task.id, staleId);
+    await pool.query("UPDATE yara_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [staleId]);
+    assert.equal((await call("POST", `/v1/tasks/${staleId}/heartbeat`, "agent-test-a", {})).statusCode, 404);
+    assert.equal((await call("POST", `/v1/tasks/${staleId}/complete`, "agent-test-a", {
+      outcome: "completed", result: { stale: true }
+    })).statusCode, 404);
+    const staleState = await pool.query("SELECT status,result FROM yara_tasks WHERE id=$1", [staleId]);
+    assert.equal(staleState.rows[0].status, "running");
+    assert.equal(staleState.rows[0].result, null);
   });
 
   test("direct and broadcast messages are durable and acknowledgeable", async () => {

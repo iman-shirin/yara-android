@@ -13,7 +13,6 @@ export function validateTaskPayload(body) {
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) return { ok: false, error: "invalid_max_attempts" };
   return { ok: true, value: { title: body.title.trim(), description: body.description, assignedTo: body.assignedTo ?? null, maxAttempts } };
 }
-
 export function validateMessagePayload(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, error: "invalid_message" };
   if (body.recipientId !== null && body.recipientId !== undefined &&
@@ -64,8 +63,8 @@ export async function migrateCollaboration(pool) {
   `);
 }
 
-export function registerCollaborationRoutes(app, { pool, authenticate, audit }) {
-  app.post("/v1/tasks", { preHandler: authenticate }, async (request, reply) => {
+export function registerCollaborationRoutes(app, { pool, authenticate, audit, authorize }) {
+  app.post("/v1/tasks", { preHandler: [authenticate, authorize("task:write")] }, async (request, reply) => {
     const parsed = validateTaskPayload(request.body);
     if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
     const { title, description, assignedTo, maxAttempts } = parsed.value;
@@ -82,7 +81,7 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     return reply.code(201).send({ task: result.rows[0] });
   });
 
-  app.get("/v1/tasks", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/v1/tasks", { preHandler: [authenticate, authorize("task:read")] }, async (request, reply) => {
     const state = request.query.status;
     if (state && !TASK_STATES.has(state)) return reply.code(400).send({ error: "invalid_status" });
     const values = [request.agent.id];
@@ -95,19 +94,19 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     return { tasks: result.rows };
   });
 
-  app.post("/v1/tasks/claim", { preHandler: authenticate }, async (request, reply) => {
+  app.post("/v1/tasks/claim", { preHandler: [authenticate, authorize("task:write")] }, async (request, reply) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=now(),updated_at=now() WHERE status='running' AND lease_until < now() AND attempts >= max_attempts");
-      await client.query("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempts < max_attempts");
+      await client.query("UPDATE yara_tasks SET status='failed',lease_until=NULL,completed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE status='running' AND lease_until <= clock_timestamp() AND attempts >= max_attempts");
+      await client.query("UPDATE yara_tasks SET status='queued',assigned_to=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE status='running' AND lease_until <= clock_timestamp() AND attempts < max_attempts");
       const selected = await client.query(
         "SELECT id FROM yara_tasks WHERE status='queued' AND (assigned_to IS NULL OR assigned_to=$1) AND attempts < max_attempts ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
         [request.agent.id]
       );
       if (!selected.rowCount) { await client.query("COMMIT"); return reply.code(204).send(); }
       const updated = await client.query(
-        "UPDATE yara_tasks SET status='running',assigned_to=$2,attempts=attempts+1,lease_until=now()+interval '3 minutes',updated_at=now() WHERE id=$1 RETURNING *",
+        "UPDATE yara_tasks SET status='running',assigned_to=$2,attempts=attempts+1,lease_until=clock_timestamp()+interval '3 minutes',updated_at=clock_timestamp() WHERE id=$1 RETURNING *",
         [selected.rows[0].id, request.agent.id]
       );
       await client.query("COMMIT");
@@ -119,16 +118,16 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     } finally { client.release(); }
   });
 
-  app.post("/v1/tasks/:id/heartbeat", { preHandler: authenticate }, async (request, reply) => {
+  app.post("/v1/tasks/:id/heartbeat", { preHandler: [authenticate, authorize("task:write")] }, async (request, reply) => {
     const result = await pool.query(
-      "UPDATE yara_tasks SET lease_until=now()+interval '3 minutes',updated_at=now() WHERE id=$1 AND assigned_to=$2 AND status='running' RETURNING id,lease_until",
+      "UPDATE yara_tasks SET lease_until=clock_timestamp()+interval '3 minutes',updated_at=clock_timestamp() WHERE id=$1 AND assigned_to=$2 AND status='running' AND lease_until>clock_timestamp() RETURNING id,lease_until",
       [request.params.id, request.agent.id]
     );
     if (!result.rowCount) return reply.code(404).send({ error: "active_task_not_found" });
     return result.rows[0];
   });
 
-  app.post("/v1/tasks/:id/complete", { preHandler: authenticate }, async (request, reply) => {
+  app.post("/v1/tasks/:id/complete", { preHandler: [authenticate, authorize("task:write")] }, async (request, reply) => {
     const outcome = request.body?.outcome ?? "completed";
     if (!["completed", "failed"].includes(outcome)) return reply.code(400).send({ error: "invalid_outcome" });
     const resultBody = request.body?.result ?? {};
@@ -136,17 +135,21 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const task = await client.query("SELECT * FROM yara_tasks WHERE id=$1 FOR UPDATE", [request.params.id]);
-      if (!task.rowCount || task.rows[0].assigned_to !== request.agent.id || task.rows[0].status !== "running") {
+      const task = await client.query("SELECT * FROM yara_tasks WHERE id=$1 AND assigned_to=$2 AND status='running' AND lease_until>clock_timestamp() FOR UPDATE", [request.params.id, request.agent.id]);
+      if (!task.rowCount) {
         await client.query("ROLLBACK");
         return reply.code(404).send({ error: "active_task_not_found" });
       }
       const retry = outcome === "failed" && task.rows[0].attempts < task.rows[0].max_attempts;
       const status = outcome === "completed" ? "completed" : retry ? "queued" : "failed";
       const updated = await client.query(
-        "UPDATE yara_tasks SET status=$2,assigned_to=CASE WHEN $2='queued' THEN NULL ELSE assigned_to END,result=$3,lease_until=NULL,updated_at=now(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE NULL END WHERE id=$1 RETURNING *",
-        [request.params.id, status, JSON.stringify(resultBody)]
+        "UPDATE yara_tasks SET status=$2,assigned_to=CASE WHEN $2='queued' THEN NULL ELSE assigned_to END,result=$3,lease_until=NULL,updated_at=clock_timestamp(),completed_at=CASE WHEN $2 IN ('completed','failed') THEN clock_timestamp() ELSE NULL END WHERE id=$1 AND assigned_to=$4 AND status='running' AND lease_until>clock_timestamp() RETURNING *",
+        [request.params.id, status, JSON.stringify(resultBody), request.agent.id]
       );
+      if (!updated.rowCount) {
+        await client.query("ROLLBACK");
+        return reply.code(404).send({ error: "active_task_not_found" });
+      }
       await client.query(
         "INSERT INTO yara_messages(id,task_id,sender_id,recipient_id,kind,body) VALUES($1,$2,$3,$4,'result',$5)",
         [randomUUID(), request.params.id, request.agent.id, task.rows[0].created_by, JSON.stringify({ outcome, retryScheduled: retry, result: resultBody })]
@@ -160,7 +163,7 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     } finally { client.release(); }
   });
 
-  app.post("/v1/messages", { preHandler: authenticate }, async (request, reply) => {
+  app.post("/v1/messages", { preHandler: [authenticate, authorize("message:write")] }, async (request, reply) => {
     const parsed = validateMessagePayload(request.body);
     if (!parsed.ok) return reply.code(400).send({ error: parsed.error });
     const { recipientId, taskId, kind, body, idempotencyKey } = parsed.value;
@@ -184,7 +187,7 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     return reply.code(201).send({ message: inserted.rows[0] });
   });
 
-  app.get("/v1/messages/inbox", { preHandler: authenticate }, async (request) => {
+  app.get("/v1/messages/inbox", { preHandler: [authenticate, authorize("message:read")] }, async (request) => {
     const since = request.query.since;
     const values = [request.agent.id];
     let filter = "(recipient_id=$1 OR recipient_id IS NULL)";
@@ -201,7 +204,7 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     return { messages: result.rows };
   });
 
-  app.post("/v1/messages/:id/ack", { preHandler: authenticate }, async (request, reply) => {
+  app.post("/v1/messages/:id/ack", { preHandler: [authenticate, authorize("message:write")] }, async (request, reply) => {
     const result = await pool.query(
       "UPDATE yara_messages SET read_at=now() WHERE id=$1 AND (recipient_id=$2 OR recipient_id IS NULL) RETURNING id,read_at",
       [request.params.id, request.agent.id]
@@ -210,7 +213,7 @@ export function registerCollaborationRoutes(app, { pool, authenticate, audit }) 
     return result.rows[0];
   });
 
-  app.get("/v1/tasks/:id/messages", { preHandler: authenticate }, async (request, reply) => {
+  app.get("/v1/tasks/:id/messages", { preHandler: [authenticate, authorize("message:read")] }, async (request, reply) => {
     const access = await pool.query("SELECT created_by,assigned_to FROM yara_tasks WHERE id=$1", [request.params.id]);
     if (!access.rowCount || ![access.rows[0].created_by, access.rows[0].assigned_to].includes(request.agent.id)) {
       return reply.code(404).send({ error: "task_not_found" });

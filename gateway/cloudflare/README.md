@@ -3,7 +3,7 @@
 ## Decision
 Replace the Node.js/Fastify/PostgreSQL hosting target with a Cloudflare Workers Fetch runtime and D1 SQLite database. Preserve REST routes, MCP tool names and schemas, per-agent credentials, GitHub App integration, branch isolation, task leases, retries, message inbox with per-agent broadcast receipts, and append-only audit semantics.
 
-**No deployment is part of this migration.** The account subscription page was reviewed before creating the dedicated D1 database. Confirm usage/spend-management settings before deploying the Worker.
+**This migration does not deploy or alter production.** A live Worker was found on 2026-11-25 (see current status below); verify billing and stage changes before any future production update.
 
 ## Why the existing service cannot be deployed unchanged
 The current Gateway starts a long-lived Fastify listener, creates a pg.Pool, uses PostgreSQL SQL and transaction APIs, and adapts MCP to Node HTTP. Those are not a direct Workers entry point. The Worker must export a Fetch handler, use D1 bindings, use Web Crypto, and use the MCP SDK's Web-standards stateless handler.
@@ -35,6 +35,8 @@ Task claiming must be a single conditional SQL statement using a subquery and RE
 7. No merge endpoint, main-branch write, or production deploy endpoint is introduced.
 8. Audit events are appended; no API may update/delete them.
 9. Secrets are environment bindings only and never committed.
+10. Agent credentials carry explicit least-privilege scopes. Provisioning defaults to `project:read`; task, message, branch-write, and draft-PR permissions must be granted explicitly. Unknown scopes are rejected, and the MCP tool list is filtered to the agent's grants.
+11. Application rate limits are isolate-local safeguards. Configure an edge-level/global rate limit before exposing the Worker to substantial public traffic.
 
 ## Compatibility and rollout
 The first migration stage is a side-by-side runtime in this branch. It must not delete the Node Gateway or the Railway staging declaration. Existing PRs #22 and #23 remain open and unmerged. Once the Worker tests pass, open a draft PR targeting the existing foundation branch or a suitable migration integration branch; do not merge it automatically.
@@ -47,7 +49,9 @@ Before cutover, test modern MCP discovery/calls and legacy stateless initializat
 - Billing profile, billing usage, and subscriptions could not be inspected because the current OAuth connection has no Billing Read scope. An API token with account-scoped Billing Read is required for that check.
 - A dedicated Cloudflare D1 database `yara-db` was created after the account subscription page showed Workers Free active, no Workers Paid subscription, and no payment method on file. Database ID is configured in `wrangler.toml`; the existing Nova Proxy resources were not modified.
 - Both migrations (`0001_init.sql` and `0002_message_receipts.sql`) were applied to the live YARA D1 database and verified by querying `sqlite_master`: five YARA tables, six indexes, and two append-only audit triggers are present.
-- The Worker has not yet been deployed. The account billing usage/spend-management settings have not been independently read through the connected API; the user-provided subscription page alone does not prove all possible account-level billable usage settings.
+- **Live state rechecked 2026-11-25:** `yara-collaboration-worker` is deployed and serving 100% traffic on version `ee53151f-4459-433e-97cc-aeeb3cf5381e` (deployment `e5aa06d8-a48d-42d4-9306-4eb0c199776a`, created 2026-11-22 20:06 UTC). The statement that it was not deployed was stale and has been corrected.
+- The live `yara-db` has five YARA tables. Read-only counts: 0 agents, 0 tasks, 0 messages, 0 message receipts and 33 audit events. The live `yara_agents` schema does **not** yet have the `scopes` column required by this branch's new migration `0003_agent_scopes.sql`.
+- Account billing usage/spend-management settings could not be independently read through the connected API. The available subscription page alone does not prove all account-level billable usage settings.
 - Latest GitHub Actions run passed on commit `ac504aa200afbb44285448ee856087543ef89adb`: 11 tests, including MCP initialize and Streamable HTTP tool discovery, weak-bootstrap rejection, and REST validation status mapping; Node syntax checks passed; both D1 migrations applied to the local SQLite emulator; npm audit reported zero vulnerabilities; Wrangler dry-run build passed.
 - Hardened admin token rotation/revocation so missing or shorter-than-32-character bootstrap secrets are rejected before database access.
 - Added support for both PKCS#8 and traditional RSA PKCS#1 PEM private-key formats for GitHub App JWT signing.

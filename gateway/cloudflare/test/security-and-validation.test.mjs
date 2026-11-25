@@ -2,6 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hashToken, issueAgentToken, safeEqual, validAgentId, validRepoPath, assertAgentBranch, assertWritablePath } from '../src/security.mjs';
 import { validateTaskPayload, validateMessagePayload } from '../src/collaboration.mjs';
+import { agentHasScope, normalizeAgentScopes, requiredApiScope, requiredToolScope } from '../../shared/permissions.mjs';
+
+test('agent permissions default to project read and reject unknown or malformed scopes', () => {
+  assert.deepEqual(normalizeAgentScopes(undefined), ['project:read']);
+  assert.deepEqual(normalizeAgentScopes(['task:read', 'project:read', 'task:read']), ['project:read', 'task:read']);
+  assert.equal(normalizeAgentScopes(['admin']), null);
+  assert.equal(normalizeAgentScopes('project:read'), null);
+  assert.equal(agentHasScope({ scopes: ['task:read'] }, 'task:read'), true);
+  assert.equal(agentHasScope({ scopes: [] }, 'task:write'), false);
+});
+
+test('API and MCP actions map to explicit least-privilege scopes', () => {
+  assert.equal(requiredApiScope('GET', '/v1/tasks'), 'task:read');
+  assert.equal(requiredApiScope('POST', '/v1/tasks/claim'), 'task:write');
+  assert.equal(requiredApiScope('PUT', '/v1/projects/acme/yara/files'), 'branch:write');
+  assert.equal(requiredApiScope('POST', '/v1/projects/acme/yara/pull-requests'), 'pull_request:create');
+  assert.equal(requiredApiScope('DELETE', '/v1/tasks'), null);
+  assert.equal(requiredToolScope('yara_task_complete'), 'task:write');
+  assert.equal(requiredToolScope('yara_message_inbox'), 'message:read');
+});
 
 test('agent tokens are unique, random-looking and stored as SHA-256 hashes', async () => {
   const first=issueAgentToken(), second=issueAgentToken();
@@ -57,7 +77,7 @@ test('MCP endpoint serves a stateless initialize request through the web handler
         bind(...values) { this.values = values; return this; },
         async first() {
           if (sql.includes('FROM yara_agents WHERE token_hash=?')) {
-            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent' } : null;
+            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent', scopes: '["project:read"]' } : null;
           }
           return null;
         },
@@ -119,7 +139,7 @@ test('REST validation errors return client status codes instead of internal erro
         bind(...values) { this.values = values; return this; },
         async first() {
           if (sql.includes('FROM yara_agents WHERE token_hash=?')) {
-            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent' } : null;
+            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent', scopes: '["message:write"]' } : null;
           }
           return null;
         },
@@ -138,6 +158,36 @@ test('REST validation errors return client status codes instead of internal erro
   assert.deepEqual(await response.json(), { error: 'invalid_recipient' });
 });
 
+test('REST routes deny agents without the required scope', async () => {
+  const { default: worker } = await import('../src/index.mjs');
+  const { hashToken } = await import('../src/security.mjs');
+  const token = 'read-only-agent-token';
+  const digest = await hashToken(token);
+  const DB = {
+    prepare(sql) {
+      return { values: [], bind(...values) { this.values = values; return this; },
+        async first() { return sql.includes('FROM yara_agents WHERE token_hash=?') && this.values[0] === digest
+          ? { id:'agent-read-only',display_name:'Read only',scopes:'["project:read"]' } : null; },
+        async run() { return { success:true }; }, async all() { return { results:[] }; } };
+    }
+  };
+  const response = await worker.fetch(new Request('https://yara.example.workers.dev/v1/tasks', {
+    method:'GET', headers:{ authorization:'Bearer '+token, 'cf-connecting-ip':'scope-test-client' }
+  }), { DB, GITHUB_REPOSITORY:'iman-shirin/yara-android' }, {});
+  assert.equal(response.status,403);
+  assert.deepEqual(await response.json(), { error:'insufficient_scope' });
+});
+
+test('Worker rejects oversized declared bodies before parsing or database access', async () => {
+  const { default: worker } = await import('../src/index.mjs');
+  const DB = { prepare() { throw new Error('oversized request must be rejected before database access'); } };
+  const response = await worker.fetch(new Request('https://yara.example.workers.dev/v1/tasks', {
+    method:'POST', headers:{'content-type':'application/json','content-length':'1048577','cf-connecting-ip':'body-limit-test'}, body:'{}'
+  }), { DB }, {});
+  assert.equal(response.status,413);
+  assert.deepEqual(await response.json(), {error:'request_too_large'});
+});
+
 
 test('stateless MCP endpoint exposes the expected YARA tool registry', async () => {
   const { default: worker } = await import('../src/index.mjs');
@@ -151,7 +201,7 @@ test('stateless MCP endpoint exposes the expected YARA tool registry', async () 
         bind(...values) { this.values = values; return this; },
         async first() {
           if (sql.includes('FROM yara_agents WHERE token_hash=?')) {
-            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent' } : null;
+            return this.values[0] === digest ? { id: 'agent-test', display_name: 'Test Agent', scopes: '["project:read"]' } : null;
           }
           return null;
         },
@@ -178,6 +228,8 @@ test('stateless MCP endpoint exposes the expected YARA tool registry', async () 
   assert.ok(dataLine, wire);
   const body = JSON.parse(dataLine.slice(5).trim());
   assert.equal(body.jsonrpc, '2.0');
-  assert.ok(body.result.tools.some((tool) => tool.name === 'yara_task_claim'));
-  assert.ok(body.result.tools.some((tool) => tool.name === 'yara_message_ack'));
+  assert.ok(body.result.tools.some((tool) => tool.name === 'yara_identity'));
+  assert.ok(body.result.tools.some((tool) => tool.name === 'yara_read_file'));
+  assert.ok(!body.result.tools.some((tool) => tool.name === 'yara_task_claim'));
+  assert.ok(!body.result.tools.some((tool) => tool.name === 'yara_message_ack'));
 });

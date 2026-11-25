@@ -7,7 +7,7 @@
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 migrations apply yara-db --local",
     "db:remote": "wrangler d1 migrations apply yara-db --remote",
-    "check": "node --check src/index.mjs && node --check src/security.mjs && node --check src/collaboration.mjs",
+    "check": "node --check src/index.mjs && node --check src/security.mjs && node --check src/collaboration.mjs && node --check ../shared/permissions.mjs && node --check ../shared/rate-limit.mjs",
     "test": "node --test test/security-and-validation.test.mjs"
   },
   "dependencies": {
