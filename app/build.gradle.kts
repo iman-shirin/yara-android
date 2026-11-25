@@ -14,6 +14,14 @@ android {
         versionName = "0.3.7"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
+    buildTypes {
+        getByName("debug") {
+            // Keep the test build installable alongside an existing production/debug
+            // install signed by a different CI debug keystore.
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
