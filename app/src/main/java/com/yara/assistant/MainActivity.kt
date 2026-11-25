@@ -70,13 +70,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycleScope.launch {
-            val savedConversations = runCatching { store.loadConversations() }.getOrDefault(emptyList())
+            val conversationLoad = runCatching { store.loadConversations() }
+            val savedConversations = conversationLoad.getOrDefault(emptyList())
             val savedActiveId = runCatching { store.loadActiveConversationId() }.getOrNull()
             val initialConversation = savedConversations.firstOrNull { it.id == savedActiveId }
                 ?: savedConversations.maxByOrNull { it.updatedAt }
                 ?: store.newConversation()
-            store.saveActiveConversationId(initialConversation.id)
-            store.saveConversation(initialConversation)
+            var initialStorageError = conversationLoad.exceptionOrNull()?.let {
+                "خواندن تاریخچه ممکن نشد؛ فایل قبلی حفظ شده و ذخیره‌سازی متوقف است."
+            }
+            if (conversationLoad.isSuccess) {
+                runCatching {
+                    store.saveActiveConversationId(initialConversation.id)
+                    store.saveConversation(initialConversation)
+                }.onFailure {
+                    initialStorageError = "ذخیره تاریخچه ممکن نشد؛ اطلاعات قبلی حفظ شده است."
+                }
+            }
             setContent {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
@@ -89,6 +99,35 @@ class MainActivity : ComponentActivity() {
                     var conversations by remember { mutableStateOf(savedConversations) }
                     var activeConversationId by remember { mutableStateOf(initialConversation.id) }
                     var lines by remember { mutableStateOf(initialConversation.messages) }
+                    var storageError by remember { mutableStateOf(initialStorageError) }
+
+                    fun persistConversation(conversation: ChatConversation): Boolean {
+                        val saved = runCatching {
+                            store.saveConversation(conversation)
+                            store.loadConversations()
+                        }
+                        return saved.fold(
+                            onSuccess = { updated ->
+                                conversations = updated
+                                true
+                            },
+                            onFailure = {
+                                storageError = "ذخیره تاریخچه ممکن نشد؛ فایل قبلی حفظ شده و پیام ذخیره‌نشده است."
+                                false
+                            }
+                        )
+                    }
+
+                    if (storageError != null) {
+                        AlertDialog(
+                            onDismissRequest = { storageError = null },
+                            title = { Text("مشکل در ذخیره تاریخچه") },
+                            text = { Text(storageError ?: "") },
+                            confirmButton = {
+                                TextButton(onClick = { storageError = null }) { Text("متوجه شدم") }
+                            }
+                        )
+                    }
                     var input by remember { mutableStateOf("") }
                     var busy by remember { mutableStateOf(false) }
                     val context = LocalContext.current
@@ -118,10 +157,9 @@ class MainActivity : ComponentActivity() {
                             }
                             lines = lines + ChatLine("assistant", reminderReply)
                             lifecycleScope.launch {
-                                runCatching {
-                                    store.saveConversation(ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines))
-                                    conversations = store.loadConversations()
-                                }
+                                persistConversation(
+                                    ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines)
+                                )
                             }
                         }
                     }
@@ -186,8 +224,7 @@ class MainActivity : ComponentActivity() {
                                         onClick = {
                                             if (!busy) {
                                                 val fresh = store.newConversation()
-                                                store.saveConversation(fresh)
-                                                conversations = store.loadConversations()
+                                                if (!persistConversation(fresh)) return@Surface
                                                 activeConversationId = fresh.id
                                                 store.saveActiveConversationId(fresh.id)
                                                 lines = emptyList()
@@ -318,11 +355,11 @@ class MainActivity : ComponentActivity() {
                                         lines = previous + ChatLine("user", msg)
                                         showConversation = true
                                         busy = true
+                                        if (!persistConversation(ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines))) {
+                                            busy = false
+                                            return@Button
+                                        }
                                         store.saveActiveConversationId(activeConversationId)
-                                        runCatching {
-                                            store.saveConversation(ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines))
-                                        }.onFailure { voiceError = "ذخیره پیام ناموفق بود: ${it.message}" }
-                                        conversations = store.loadConversations()
                                         lifecycleScope.launch {
                                             val memoryStore = YaraMemoryStore(context)
                                             val reply = runCatching {
@@ -418,10 +455,9 @@ class MainActivity : ComponentActivity() {
 
                                             }.getOrElse { "انجام درخواست ناموفق بود: ${it.message}" }
                                             lines = lines + ChatLine("assistant", reply)
-                                            runCatching {
-                                                store.saveConversation(ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines))
-                                            }.onFailure { voiceError = "ذخیره پاسخ ناموفق بود: ${it.message}" }
-                                            conversations = store.loadConversations()
+                                            persistConversation(
+                                                ChatConversation(activeConversationId, "گفتگوی جدید", System.currentTimeMillis(), lines)
+                                            )
                                             if (voiceOutput && !reply.startsWith("اتصال به مدل برقرار نشد:")) voice.speak(reply)
                                             busy = false
                                         }
