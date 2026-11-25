@@ -27,6 +27,9 @@ data class ChatConversation(
     val messages: List<ChatLine>
 )
 
+private fun titleFor(messages: List<ChatLine>): String = messages.firstOrNull { it.role == "user" }
+    ?.content?.replace(Regex("\\s+"), " ")?.take(48)?.takeIf { it.isNotBlank() } ?: "گفتگوی جدید"
+
 /** Compatibility facade for the original single-conversation call sites. */
 class ChatStore(context: Context) {
     private val encrypted = EncryptedChatStore(context)
@@ -401,6 +404,7 @@ internal class EncryptedChatStore(context: Context) {
         const val KEY_ALIAS = "yara_chat_archive_aes_v1"
         const val LEGACY_PREFS = "yara_chat"
         const val LEGACY_KEY = "lines"
+        const val KEY_CONVERSATIONS = "conversations"
         const val KEY_ACTIVE_CONVERSATION = "active_conversation_id"
         const val ARCHIVE_NAME = "yara_chat_history.enc"
         const val BACKUP_DIRECTORY = "yara_chat_recovery"
@@ -627,7 +631,7 @@ private object ChatArchiveCodecTestCompat {
                     require(line.role == "user" || line.role == "assistant")
                     val role = line.role.toByteArray(Charsets.UTF_8)
                     val content = line.content.toByteArray(Charsets.UTF_8)
-                    require(content.isNotBlank() && content.size <= 1_000_000)
+                    require(line.content.isNotBlank() && content.size <= 1_000_000)
                     output.writeByte(role.size)
                     output.write(role)
                     output.writeInt(content.size)
